@@ -1,6 +1,15 @@
 import numpy as np
 import script
-from script import relu, sigmoid, pre_regularization_value, feed
+from script import (
+    relu,
+    sigmoid,
+    sigmoid_derivative,
+    pre_regularization_value,
+    feed,
+    expected_values_last_layer,
+    cost_gradient_one_example,
+    cost_one_example,
+)
 
 
 def test_1():
@@ -27,7 +36,9 @@ def test_2():
     e = a.variables
     assert len(e) == 4
     assert len(e[0]) == 3
-    assert np.array_equal(e[0][0], np.array([None] * 784))
+    assert np.array_equal(
+        e[0][0], np.array([None] * 784, dtype=np.float16, ndmin=2), equal_nan=True
+    )
     assert len(e[1][1][15]) == 784
 
 
@@ -53,15 +64,12 @@ def test_sum():
 
 def test_pre_regularization_value():
     # Cas scalaire (j'ai passé trois heures à chercher l'erreur suivante : je n'avais pas transformé
-    # le cas scalaire en "cas vectoriel à 1D").
+    # le cas scalaire en "cas vectoriel à 1D"). Par ex., biais = np.random.rand().
     biais = np.array([np.random.rand()])
-    values = np.random.rand(2)
+    values = np.random.rand(1, 2)
     weights = np.array([np.random.rand(2)])
-    print(values)
-    print(weights)
-    print(np.multiply(values, weights))
-    _pre_regularization_value = np.sum(np.multiply(values, weights), axis=1) - biais
-    np.testing.assert_array_equal(
+    _pre_regularization_value = values @ weights.T - biais
+    np.testing.assert_array_almost_equal(
         pre_regularization_value(biais=biais, weights=weights, values=values),
         _pre_regularization_value,
     )
@@ -72,7 +80,7 @@ def test_pre_regularization_value():
     values = np.random.rand(size_previous_rank)
     weights = np.random.rand(size_rank, size_previous_rank)
     _pre_regularization_value = np.sum(np.multiply(values, weights), axis=1) - biais
-    np.testing.assert_array_equal(
+    np.testing.assert_array_almost_equal(
         pre_regularization_value(biais=biais, weights=weights, values=values),
         _pre_regularization_value,
     )
@@ -80,9 +88,11 @@ def test_pre_regularization_value():
 
 def test_feed():
     multilayer_perceptron = script.MultilayerPerceptron([1])
-    example = np.array([1])
+    example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
-    np.testing.assert_array_equal(multilayer_perceptron.variables[0][2], np.array([1]))
+    np.testing.assert_array_equal(
+        multilayer_perceptron.variables[0][2], np.array([[1]])
+    )
     multilayer_perceptron = script.MultilayerPerceptron([2])
     example = np.array([1, 2])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
@@ -91,16 +101,16 @@ def test_feed():
     )
 
     multilayer_perceptron = script.MultilayerPerceptron([1, 1])
-    example = np.array([1])
+    example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
-    a = multilayer_perceptron.variables[0][2][0]
+    a = multilayer_perceptron.variables[0][2][0][0]
     w = multilayer_perceptron.variables[1][1][0][0]
-    b = multilayer_perceptron.variables[1][0][0]
+    b = multilayer_perceptron.variables[1][0][0][0]
     value = sigmoid((a * w) - b)
-    assert multilayer_perceptron.variables[1][2][0] == value
+    assert multilayer_perceptron.variables[1][2][0][0] == value
 
     multilayer_perceptron = script.MultilayerPerceptron([1, 2])
-    example = np.array([1])
+    example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -109,7 +119,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
     multilayer_perceptron = script.MultilayerPerceptron([2, 1])
-    example = np.array([1, 2])
+    example = np.array([[1, 2]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -118,7 +128,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
     multilayer_perceptron = script.MultilayerPerceptron([2, 2])
-    example = np.array([1, 2])
+    example = np.array([[1, 2]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -127,7 +137,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
     multilayer_perceptron = script.MultilayerPerceptron([1, 1, 1])
-    example = np.array([1])
+    example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -139,7 +149,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[2][2], value_2)
 
     multilayer_perceptron = script.MultilayerPerceptron([2, 2, 2])
-    example = np.random.rand(2)
+    example = np.random.rand(1, 2)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -151,7 +161,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[2][2], value_2)
 
     multilayer_perceptron = script.MultilayerPerceptron([784, 16, 16])
-    example = np.random.rand(784)
+    example = np.random.rand(1, 784)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -163,7 +173,7 @@ def test_feed():
     np.testing.assert_array_equal(multilayer_perceptron.variables[2][2], value_2)
 
     multilayer_perceptron = script.MultilayerPerceptron([784, 16, 16, 10])
-    example = np.random.rand(784)
+    example = np.random.rand(1, 784)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
     w = multilayer_perceptron.variables[1][1]
@@ -176,3 +186,137 @@ def test_feed():
     b = multilayer_perceptron.variables[3][0]
     value_3 = sigmoid(np.sum(value_2 * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[3][2], value_3)
+
+
+def test_expected_values_last_layer():
+    np.testing.assert_array_equal(
+        expected_values_last_layer(0), np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    )
+    np.testing.assert_array_equal(
+        expected_values_last_layer(1), np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+    )
+
+
+def test_cost_one_example():
+    multilayer_perceptron = script.MultilayerPerceptron([2])
+    labeled_example = [np.array([np.random.rand(2)]), np.array([np.random.rand(2)])]
+    assert cost_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    ) == np.linalg.norm(labeled_example[0] - multilayer_perceptron.variables[0][2])
+
+
+def test_cost_gradient_one_example():
+    """
+    The tests are divided into two groups. The first group assess that the cost gradient internal
+    structure verify the theoretical formulae. The second group assess wether the computed
+    direction maximize indeed the cost.
+    """
+    ## First group ##
+
+    # First a test to assess the correct computation of the partial derivatives w.r.t. the values
+    # of the last layer (whose computations are different than the rest). The formula we're
+    # verifying is (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑁−1) )=−2 ∗(𝑦−𝐴^(𝑁−1)):
+    size = 2
+    multilayer_perceptron = script.MultilayerPerceptron([size, size])
+    label = np.random.rand(1, size)
+    labeled_example = [label, np.random.rand(1, size)]
+    _cost_gradient = cost_gradient_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    )
+    np.testing.assert_array_equal(
+        _cost_gradient[1][2], -2 * (label - multilayer_perceptron.variables[1][2])
+    )
+
+    # Then we verify the formula of the partial derivatives w.r.t. the biaises :
+    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 )=−(𝜕𝐶_(/image))/(𝜕𝐴^𝑖 )⊙𝑓_𝑖^′ (𝑍^𝑖).
+    np.testing.assert_array_equal(
+        _cost_gradient[1][0],
+        -_cost_gradient[1][2]
+        * sigmoid_derivative(
+            pre_regularization_value(
+                biais=multilayer_perceptron.variables[1][0],
+                weights=multilayer_perceptron.variables[1][1],
+                values=multilayer_perceptron.variables[1][2],
+            )
+        ),
+    )
+
+    # We verify the formula of the partial derivatives w.r.t. the weights :
+    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝐴^(𝑖−1) )^𝑇∗(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 ). Note that we start to need to use
+    # array_almost_equal instead of array_equal, probably because of rouding errors which start to
+    # add up.
+    np.testing.assert_array_almost_equal(
+        _cost_gradient[1][1],
+        -multilayer_perceptron.variables[0][2].T @ _cost_gradient[1][0],
+    )
+
+    # We verify the formula of the partial derivative w.r.t. the values of the previous layer:
+    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖.
+    np.testing.assert_array_almost_equal(
+        _cost_gradient[0][2],
+        _cost_gradient[1][0] @ multilayer_perceptron.variables[1][1],
+    )
+
+    # We verify that the loop works as intended.
+    size = 2
+    multilayer_perceptron = script.MultilayerPerceptron([size, size, size])
+    labeled_example = [np.random.rand(1, size), np.random.rand(1, size)]
+    _cost_gradient = cost_gradient_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    )
+    for i in range(size - 1, 0, -1):
+        # w.r.t. to the biaises
+        np.testing.assert_array_equal(
+            _cost_gradient[i][0],
+            -_cost_gradient[i][2]
+            * multilayer_perceptron.layers[i].activation_fct_derivative(
+                pre_regularization_value(
+                    biais=multilayer_perceptron.variables[i][0],
+                    weights=multilayer_perceptron.variables[i][1],
+                    values=multilayer_perceptron.variables[i][2],
+                )
+            ),
+        )
+        # w.r.t. to the weights
+        np.testing.assert_array_almost_equal(
+            _cost_gradient[i][1],
+            -multilayer_perceptron.variables[i - 1][2].T * _cost_gradient[i][0],
+        )
+        # w.r.t. to the values of the previous layer
+        np.testing.assert_array_almost_equal(
+            _cost_gradient[i - 1][2],
+            _cost_gradient[i][0] @ multilayer_perceptron.variables[i][1],
+        )
+
+    ## 2nd group ##
+
+    nb_tests = 10
+    # We'll verify that in nb_tests over a small nn, the cost decreases in the direction opposite
+    # of the gradient. Since is only true in the linearized case. Thus, to smooth the cost function
+    # (w.r.t. the parameters), we use a nn with a lot of parameters than for regular unit tests.
+    nn_size = 10
+    multilayer_perceptron = script.MultilayerPerceptron([nn_size] * 4)
+    for i in range(nb_tests):
+        print(i)
+        labeled_example = [np.random.rand(1, nn_size), np.random.rand(1, nn_size)]
+        initial_cost_one_example = cost_one_example(
+            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+        )
+        _cost_gradient_one_example = cost_gradient_one_example(
+            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+        )
+        print(multilayer_perceptron.variables[1][0])
+        # We nudge the nn parameters into the direction opposite the gradient:
+        nudge_strenght = 10 ** (-4) * nn_size
+        for i, layer_variables in enumerate(multilayer_perceptron.variables):
+            layer_variables[0] += -nudge_strenght * _cost_gradient_one_example[i][0]
+            layer_variables[1] += -nudge_strenght * _cost_gradient_one_example[i][1]
+
+        print(multilayer_perceptron.variables[1][0])
+        new_cost_one_example = cost_one_example(
+            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+        )
+        print(
+            f"initial cost = {initial_cost_one_example} & new cost = {new_cost_one_example}"
+        )
+        np.testing.assert_array_less(new_cost_one_example, initial_cost_one_example)

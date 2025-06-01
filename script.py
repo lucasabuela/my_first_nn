@@ -27,9 +27,7 @@ def relu_derivative(x: float) -> float:
     """
     The derivative of ReLu.
     """
-    if x <= 0:
-        return 0
-    return 1
+    return np.where(x <= 0, 0, 1)
 
 
 def sigmoid_derivative(x: float) -> float:
@@ -92,8 +90,8 @@ class Node:
         weights: np.array,
         y_coord: int,
         layer: "Layer",
-        value: float = np.random.random(),
-        biais: float = np.random.random() - 0.5,
+        value: float,
+        biais: float,
         activation_fct: Callable[[float], float] = relu,
     ):
         self.x_coord = layer.rank
@@ -106,7 +104,6 @@ class Node:
             self.biais = None
             self.weights = None
             self.activation_fct = None
-        # self.irrigating_nodes_id = irrigating_nodes_id
         self.y_coord = y_coord
         self.layer = layer
 
@@ -139,7 +136,9 @@ class Layer:
         for j in range(size):
             self.nodes.append(
                 Node(
+                    biais=np.random.rand() - 0.5,
                     weights=np.random.rand(previous_layer_size),
+                    value=np.random.rand(),
                     y_coord=j,
                     layer=self,
                     activation_fct=self.activation_fct,
@@ -156,9 +155,18 @@ class Layer:
             weights.append(node.weights)
             values.append(node.value)
 
-        self.biaises = np.array(biaises)
-        self.weights = np.array(weights)
-        self.values = np.array(values)
+        # We use a lower precision type than usual (float64 instead of float16) because the
+        # precision is unecessary here, and we need to save space. Note that we also require
+        # the arrays created to be 2D (and not 1D which is the default behavior). It will be
+        # required to perform matrices multiplication later on. We also use row vectors rather
+        # than column ones as in my notes because operations are slightly faster on them (as numpy
+        # and C underneath have the convention row-major). We could change the convention for these
+        # arrays but some numpys functions are optimized for row-major order, and might make row-
+        # major order copies of the arrays anyway. Thus, remember throughout the code that every
+        # matrix is the transposed of its counterpart in my notes.
+        self.biaises = np.array(biaises, dtype=np.float16, ndmin=2)
+        self.weights = np.array(weights, dtype=np.float16, ndmin=2)
+        self.values = np.array(values, dtype=np.float16, ndmin=2)
 
 
 class MultilayerPerceptron:
@@ -170,7 +178,8 @@ class MultilayerPerceptron:
         """
         Args:
             layout (list): gives the number of layers, as well as the number of nodes in each layer.
-                In the list, the integer at position i (starts at 0) is the number of nodes in layer i.
+                In the list, the integer at position i (starts at 0) is the number of nodes in layer
+                i.
             activation_fct (Callable[[float], float]): the activation function to be used. No matter
                 its value, the nodes on the last layer will use the sigmoid.
         """
@@ -196,13 +205,14 @@ class MultilayerPerceptron:
                     rank=i,
                     size=size,
                     activation_fct=sigmoid,
+                    activation_fct_derivative=sigmoid_derivative,
                 )
                 self.layers.append(layer)
 
         # We gather all the nn's variables (parameters + values) in one attribute. To undertand its
         # structure, see the description of the corresponding function. Using a deepcopy is crucial
-        # to achieve performance (otherwise, the elements of the arrays are not numbers, but pointers
-        # to object attributes).
+        # to achieve performance (otherwise, the elements of the arrays are not numbers, but
+        # pointers to object attributes).
         self.variables = variables_instantiation(uncomplete_multilayer_perceptron=self)
 
 
@@ -211,10 +221,9 @@ def pre_regularization_value(
     biais: float, weights: np.array, values: np.array
 ) -> float:
     """
-    As its name suggests.
+    As its name suggests. It corresponds to the following equation : Z^i=W^i A^(i-1)-B^i.
     """
-    # /!\ important de préciser l'axis, ce n'est pas le comportement par défaut.
-    z = np.sum(np.multiply(values, weights), axis=1) - biais
+    z = values @ weights.T - biais
     return z
 
 
@@ -232,7 +241,6 @@ def feed(multilayer_perceptron: "MultilayerPerceptron", example: np.array):
     # Plugs the value of the example on the first layer.
     multilayer_perceptron.variables[0][2] = example
 
-    # Commençons pr l'écrire de manière non vectorisée.
     for i in range(1, N):
         z = pre_regularization_value(
             biais=multilayer_perceptron.variables[i][0],
@@ -263,17 +271,19 @@ def cost_gradient_one_example(
     Args:
         multilayer_perceptron (MultilayerPerceptron): the neural network whose gradient of the
             cost with respect to the labeled example we want to calculate.
-        labeled_example (list): of the form [label, example]. Here, exemple is a list of 784
-            floats between 0 and 1, and label is an int between 0 and 9.
+        labeled_example (list): of the form [label, example]. "label" and "example" are 2D row
+            arrays of size respectively the size of the last layer and the size of the first layer.
+            Note that label is not a str, or an int, it has to be directly the output on the last
+            layer that the neural network should have. A small function tailored to each problem
+            should be used to turn a label in natural language into the corresponding array of
+            output values. Here, exemple is an array of 784 floats between 0 and 1, and abel is an
+            array of 10 floats between 0 and 1.
 
     Returns:
-        _cost_gradient_one_example (float): ibid.
+        _cost_gradient_one_example (np.array): ibid.
     """
     # First, we feed the neural network with the example.
     feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
-
-    # We compute the expected values on the last layer:
-    y = expected_values_last_layer(labeled_example[0])
 
     # We'll have to compute the partial derivatives w.r.t all the variables, i.e. w.r.t the
     # weights, the biaises and also the values. Thus we define :
@@ -283,13 +293,10 @@ def cost_gradient_one_example(
     N = len(multilayer_perceptron.layers)
 
     # Let's start by tackling the special case of the partial derivatives with regard to the values
-    # of the last layer :
-    """ J'aimerais bien ici pouvoir écrire une commande vectorisée. Commençons par une commande
-    non vectorisée"""
-    for j in range(len(multilayer_perceptron.variables[N - 1])):
-        partial_derivatives[N - 1][j][2] = -2 * (
-            y[j] - multilayer_perceptron.variables[N - 1][j][2]
-        )
+    # of the last layer. The formula is (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑁−1) )=−2 ∗(𝑦−𝐴^(𝑁−1)):
+    partial_derivatives[N - 1][2] = -2 * (
+        labeled_example[0] - multilayer_perceptron.variables[N - 1][2]
+    )
 
     # Then, the rest of the partial derivatives can be computed layer by layer, by "going back into
     # the tree". It is not possible to vectorize along the principal axis of the nn (on which the
@@ -301,44 +308,34 @@ def cost_gradient_one_example(
         # - the gradients w.r.t. the values of the previous layer a_{k}^{i-1}.
         # They each can be vectorized, which is what I'll try to implement in a second time.
 
-        # Computation of the gradients w.r.t. the b_{j}^{i}:
-        """j'aimerais bien vectoriser cette ligne. Je ne suis pas non plus sûr de cette version."""
-        for j in range(len(partial_derivatives[i])):
-            partial_derivatives[i][j][0] = (
-                partial_derivatives[i][j][2]
-                * (-1)
-                * multilayer_perceptron.activation_fct_derivative(
-                    pre_regularization_value(
-                        biais=multilayer_perceptron.variables[i][:][0],
-                        weights=multilayer_perceptron.variables[i][:][1],
-                        values=multilayer_perceptron.variables[i][:][2],
-                    )
+        # Computation of the gradients w.r.t. the b_{j}^{i}. Note that the product employed is the
+        # element-wise product. The formula employed is
+        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 )=−(𝜕𝐶_(/image))/(𝜕𝐴^𝑖 )⊙𝑓_𝑖^′ (𝑍^𝑖):
+        partial_derivatives[i][0] = -(
+            partial_derivatives[i][2]
+            * multilayer_perceptron.layers[i].activation_fct_derivative(
+                pre_regularization_value(
+                    biais=multilayer_perceptron.variables[i][0],
+                    weights=multilayer_perceptron.variables[i][1],
+                    values=multilayer_perceptron.variables[i][2],
                 )
             )
+        )
 
         # Computation of the gradients w.r.t. the w_{j,k}^{i}. We use a relation between these and
-        # the gradients w.r.t. the biases to accelerate the compute (see powerpoint).
-        for j in range(len(partial_derivatives[i])):
-            for k in range(len(partial_derivatives[i - 1])):
-                partial_derivatives[i][j][1][k] = (
-                    -partial_derivatives[i][j][0] * partial_derivatives[i - 1][k][2]
-                )
+        # the gradients w.r.t. the biases to accelerate the compute. The formula is:
+        # ((𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝐴^(𝑖−1) )^𝑇∗(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 ).
+        partial_derivatives[i][1] = -multilayer_perceptron.variables[i - 1][2].T @ (
+            partial_derivatives[i][0]
+        )
 
-        # Computation of the gradients w.r.t. the a_{k}^{i-1}:
-        for j in range(len(partial_derivatives[i - 1])):
-            partial_derivatives[i - 1][j][2] = (
-                partial_derivatives[i][j][1][k]
-                * multilayer_perceptron.activation_fct_derivative(
-                    pre_regularization_value(
-                        biais=multilayer_perceptron.variables[i][:][0],
-                        weights=multilayer_perceptron.variables[i][:][1],
-                        values=multilayer_perceptron.variables[i][:][2],
-                    )
-                )
-                * partial_derivatives[i][j][2]
-            )
+        # Computation of the gradients w.r.t. the a_{k}^{i-1} with the formula :
+        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖. Same note as above.
+        partial_derivatives[i - 1][2] = (
+            partial_derivatives[i][0] @ multilayer_perceptron.variables[i][1]
+        )
 
-    _cost_gradient_one_example = partial_derivatives[:][:][:2]
+        _cost_gradient_one_example = partial_derivatives
 
     return _cost_gradient_one_example
 
@@ -420,6 +417,32 @@ def learning(
             )
     # La suite à écrire plus tard.
     return multilayer_perceptron
+
+
+def cost_one_example(
+    multilayer_perceptron: MultilayerPerceptron, labeled_example: list
+):
+    """Make the multilayer perceptron guess for the provided example and computes the L^2 distance
+    of its output to the label provided. Note that this function works in place, it modifies the
+    values of the neural network (not its parameters).
+
+    Args:
+        multilayer_perceptron (MultilayerPerceptron)
+        labeled_example (list): of the form [label, example]. "label" and "example" are 2D row
+            arrays of size respectively the size of the last layer and the size of the first layer.
+            Note that label is not a str, or an int, it has to be directly the output on the last
+            layer that the neural network should have. A small function tailored to each problem
+            should be used to turn a label in natural language into the corresponding array of
+            output values.
+
+    Returns:
+        _cost_one_example (float)
+    """
+    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+    N = len(multilayer_perceptron.variables)
+    return np.linalg.norm(
+        labeled_example[0] - multilayer_perceptron.variables[N - 1][2]
+    )
 
 
 def main():
