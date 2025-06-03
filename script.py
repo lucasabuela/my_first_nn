@@ -118,6 +118,7 @@ class Layer:
         multilayer_perceptron: "MultilayerPerceptron",
         rank: int,
         size: int,
+        dtype: type,
         activation_fct: Callable[[float], float] = relu,
         activation_fct_derivative: Callable[[float], float] = relu_derivative,
     ):
@@ -136,9 +137,9 @@ class Layer:
         for j in range(size):
             self.nodes.append(
                 Node(
-                    biais=np.random.rand() - 0.5,
-                    weights=np.random.rand(previous_layer_size),
-                    value=np.random.rand(),
+                    biais=1 * (np.random.rand() - 0.5),
+                    weights=1 * np.random.rand(previous_layer_size),
+                    value=1 * np.random.rand(),
                     y_coord=j,
                     layer=self,
                     activation_fct=self.activation_fct,
@@ -164,9 +165,9 @@ class Layer:
         # arrays but some numpys functions are optimized for row-major order, and might make row-
         # major order copies of the arrays anyway. Thus, remember throughout the code that every
         # matrix is the transposed of its counterpart in my notes.
-        self.biaises = np.array(biaises, dtype=np.float16, ndmin=2)
-        self.weights = np.array(weights, dtype=np.float16, ndmin=2)
-        self.values = np.array(values, dtype=np.float16, ndmin=2)
+        self.biaises = np.array(biaises, dtype=dtype, ndmin=2)
+        self.weights = np.array(weights, dtype=dtype, ndmin=2)
+        self.values = np.array(values, dtype=dtype, ndmin=2)
 
 
 class MultilayerPerceptron:
@@ -174,7 +175,12 @@ class MultilayerPerceptron:
     Multilayer-perceptron.
     """
 
-    def __init__(self, layout: list, activation_fct: Callable[[float], float] = relu):
+    def __init__(
+        self,
+        layout: list,
+        activation_fct: Callable[[float], float] = relu,
+        dtype: type = np.float16,
+    ):
         """
         Args:
             layout (list): gives the number of layers, as well as the number of nodes in each layer.
@@ -182,6 +188,8 @@ class MultilayerPerceptron:
                 i.
             activation_fct (Callable[[float], float]): the activation function to be used. No matter
                 its value, the nodes on the last layer will use the sigmoid.
+            dtype (type): the the type with wich the parameters should be saved. Affects memory and
+                performance. Default to np.float16.
         """
         self.cost = -1
         self.activation_fct = activation_fct
@@ -197,6 +205,7 @@ class MultilayerPerceptron:
                     size=size,
                     activation_fct=self.activation_fct,
                     activation_fct_derivative=self.activation_fct_derivative,
+                    dtype=dtype,
                 )
                 self.layers.append(layer)
             else:
@@ -206,6 +215,7 @@ class MultilayerPerceptron:
                     size=size,
                     activation_fct=sigmoid,
                     activation_fct_derivative=sigmoid_derivative,
+                    dtype=dtype,
                 )
                 self.layers.append(layer)
 
@@ -317,25 +327,25 @@ def cost_gradient_one_example(
                 pre_regularization_value(
                     biais=multilayer_perceptron.variables[i][0],
                     weights=multilayer_perceptron.variables[i][1],
-                    values=multilayer_perceptron.variables[i][2],
+                    values=multilayer_perceptron.variables[i - 1][2],
                 )
             )
         )
 
         # Computation of the gradients w.r.t. the w_{j,k}^{i}. We use a relation between these and
         # the gradients w.r.t. the biases to accelerate the compute. The formula is:
-        # ((𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝐴^(𝑖−1) )^𝑇∗(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 ).
-        partial_derivatives[i][1] = -multilayer_perceptron.variables[i - 1][2].T @ (
-            partial_derivatives[i][0]
+        # ((𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 )^T*(𝐴^(𝑖−1) ).
+        partial_derivatives[i][1] = (
+            -partial_derivatives[i][0].T @ multilayer_perceptron.variables[i - 1][2]
         )
 
         # Computation of the gradients w.r.t. the a_{k}^{i-1} with the formula :
-        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖. Same note as above.
-        partial_derivatives[i - 1][2] = (
+        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=-(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖. Same note as above.
+        partial_derivatives[i - 1][2] = -(
             partial_derivatives[i][0] @ multilayer_perceptron.variables[i][1]
         )
 
-        _cost_gradient_one_example = partial_derivatives
+    _cost_gradient_one_example = partial_derivatives
 
     return _cost_gradient_one_example
 
@@ -422,9 +432,9 @@ def learning(
 def cost_one_example(
     multilayer_perceptron: MultilayerPerceptron, labeled_example: list
 ):
-    """Make the multilayer perceptron guess for the provided example and computes the L^2 distance
-    of its output to the label provided. Note that this function works in place, it modifies the
-    values of the neural network (not its parameters).
+    """Make the multilayer perceptron guess for the provided example and computes the square of the
+    L^2 distance of its output to the label provided. Note that this function works in place, it
+    modifies the values of the neural network (not its parameters).
 
     Args:
         multilayer_perceptron (MultilayerPerceptron)
@@ -436,12 +446,14 @@ def cost_one_example(
             output values.
 
     Returns:
-        _cost_one_example (float)
+        _cost_one_example (float): with, I suppose, the least precision between the one of the
+            parameters of multilayer_perceptron.variables and the labeled_example ? Semble être np.float64 par défaut.
     """
     feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
     N = len(multilayer_perceptron.variables)
-    return np.linalg.norm(
-        labeled_example[0] - multilayer_perceptron.variables[N - 1][2]
+    return (
+        np.linalg.norm(labeled_example[0] - multilayer_perceptron.variables[N - 1][2])
+        ** 2
     )
 
 

@@ -200,9 +200,21 @@ def test_expected_values_last_layer():
 def test_cost_one_example():
     multilayer_perceptron = script.MultilayerPerceptron([2])
     labeled_example = [np.array([np.random.rand(2)]), np.array([np.random.rand(2)])]
-    assert cost_one_example(
+    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+    expected_cost_one_example = 0
+    for j in range(2):
+        expected_cost_one_example += (
+            labeled_example[0][0][j] - multilayer_perceptron.variables[0][2][0][j]
+        ) ** 2
+    actual_cost_one_example = cost_one_example(
         multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
-    ) == np.linalg.norm(labeled_example[0] - multilayer_perceptron.variables[0][2])
+    )
+    # Rounding can raise errors unrelated with the thested behavior. Thus, we test that the two
+    # values are close enough in proportion rather than being equal.
+    rtol = 1e-06
+    np.testing.assert_allclose(
+        actual=actual_cost_one_example, desired=expected_cost_one_example, rtol=rtol
+    )
 
 
 def test_cost_gradient_one_example():
@@ -236,25 +248,25 @@ def test_cost_gradient_one_example():
             pre_regularization_value(
                 biais=multilayer_perceptron.variables[1][0],
                 weights=multilayer_perceptron.variables[1][1],
-                values=multilayer_perceptron.variables[1][2],
+                values=multilayer_perceptron.variables[0][2],
             )
         ),
     )
 
     # We verify the formula of the partial derivatives w.r.t. the weights :
-    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝐴^(𝑖−1) )^𝑇∗(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 ). Note that we start to need to use
+    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 ).T*(𝐴^(𝑖−1) ). Note that we start to need to use
     # array_almost_equal instead of array_equal, probably because of rouding errors which start to
     # add up.
     np.testing.assert_array_almost_equal(
         _cost_gradient[1][1],
-        -multilayer_perceptron.variables[0][2].T @ _cost_gradient[1][0],
+        -_cost_gradient[1][0].T @ multilayer_perceptron.variables[0][2],
     )
 
     # We verify the formula of the partial derivative w.r.t. the values of the previous layer:
-    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖.
+    # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=- (𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖.
     np.testing.assert_array_almost_equal(
         _cost_gradient[0][2],
-        _cost_gradient[1][0] @ multilayer_perceptron.variables[1][1],
+        -_cost_gradient[1][0] @ multilayer_perceptron.variables[1][1],
     )
 
     # We verify that the loop works as intended.
@@ -273,29 +285,149 @@ def test_cost_gradient_one_example():
                 pre_regularization_value(
                     biais=multilayer_perceptron.variables[i][0],
                     weights=multilayer_perceptron.variables[i][1],
-                    values=multilayer_perceptron.variables[i][2],
+                    values=multilayer_perceptron.variables[i - 1][2],
                 )
             ),
         )
         # w.r.t. to the weights
         np.testing.assert_array_almost_equal(
             _cost_gradient[i][1],
-            -multilayer_perceptron.variables[i - 1][2].T * _cost_gradient[i][0],
+            -_cost_gradient[i][0].T @ multilayer_perceptron.variables[i - 1][2],
         )
         # w.r.t. to the values of the previous layer
         np.testing.assert_array_almost_equal(
             _cost_gradient[i - 1][2],
-            _cost_gradient[i][0] @ multilayer_perceptron.variables[i][1],
+            -_cost_gradient[i][0] @ multilayer_perceptron.variables[i][1],
         )
 
     ## 2nd group ##
 
+    # We'll first verify that the comptuted partial derivatives makes sense, that is that when only
+    # their respective parameter is nudged by eps, the cost varies roughly by partial_derivative *
+    # eps.
+    layout = [1, 1, 1]
+    eps = 2 * (10 ** (-4))
+    dtype = np.float64
+
+    # Relative tolerance of the comparison tests.
+    rtol = 1e-2
+
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=dtype)
+    N = len(layout)
+    labeled_example = [
+        np.random.rand(1, layout[-1]),
+        np.random.rand(1, layout[0]),
+    ]
+    initial_cost_one_example = cost_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    )
+    _cost_gradient_one_example = cost_gradient_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    )
+
+    # First we tackle the special case of the values of the last layer. We can't use the
+    # cost_one_example to compute the cost in this case as it would change the values of
+    # the last layer.
+    for j in range(layout[-1]):
+        multilayer_perceptron.variables[N - 1][2][0][j] += eps
+        new_cost_one_example = (
+            np.linalg.norm(
+                labeled_example[0][0] - multilayer_perceptron.variables[N - 1][2][0]
+            )
+            ** 2
+        )
+        dc = new_cost_one_example - initial_cost_one_example
+        expected_dc = eps * _cost_gradient_one_example[N - 1][2][0][j]
+
+        # We now assess that expected_dc is close to dc up to some relative tolerance. We also let
+        # an absolute tolerance. Why ? Imagine the following case : expected_dc and the real dc
+        # (not the one currently computed) are of the order of magnitude 1e-32, and actual_cost and
+        # and expected_cost of 1e-7 (those are not frequent values for the partial derivatives
+        # w.r.t. the values of the last layer, but can be for the others parameters whose effects
+        # might be hindered by the final sigmoid function. Thus, this remark is mostly relevant for
+        # the later lests.). When dc is computed, 0 is returned because a difference of 1e-32 is
+        # beyond the precision with which these numbers are saved (the smallest difference
+        # catchable is 1e-7 (at which the decimal digits of the costs start) + the number of
+        # decimal digits of the representation (15 for float64, also called the machine epsilon).
+        # In consequence, to not catch these irrelevant errors, we let an absolute tolerance of
+        # expected_cost * 1e-(number of decimal digits of the used representation), or
+        # alternatively, expected_cost * machine epsilon.
+        machine_epsilon = np.finfo(dtype).eps
+        atol = new_cost_one_example * machine_epsilon
+        np.testing.assert_allclose(actual=dc, desired=expected_dc, rtol=rtol, atol=atol)
+        # (In this simple case, we can find a simple theoretical formula for actual-desired, which
+        # is exactly eps**2. This was confirmed visually when debugging).
+
+        # We don't forget to put back the value to its initial state to not disturb the next tests.
+        multilayer_perceptron.variables[N - 1][2][0][j] += -eps
+
+    # Now we test the partial derivatives w.r.t. the other parameters:
+    for i in range(N - 1, 0, -1):
+        # Starting with the biaises:
+        for j in range(layout[i]):
+            multilayer_perceptron.variables[i][0][0][j] += eps
+            new_cost_one_example = cost_one_example(
+                multilayer_perceptron=multilayer_perceptron,
+                labeled_example=labeled_example,
+            )
+            dc = new_cost_one_example - initial_cost_one_example
+            expected_dc = eps * _cost_gradient_one_example[i][0][0][j]
+
+            # Same remark as previously on the absolute tolerance used.
+            atol = new_cost_one_example * machine_epsilon
+            np.testing.assert_allclose(
+                actual=dc, desired=expected_dc, rtol=rtol, atol=atol
+            )
+
+            # Again, we don't forget to put back the value to its initial state to not disturb the
+            # next tests.
+            multilayer_perceptron.variables[i][0][0][j] += -eps
+
+        # The weights:
+        for j in range(layout[i]):
+            for k in range(layout[i - 1]):
+                multilayer_perceptron.variables[i][1][j][k] += eps
+                new_cost_one_example = cost_one_example(
+                    multilayer_perceptron=multilayer_perceptron,
+                    labeled_example=labeled_example,
+                )
+                dc = new_cost_one_example - initial_cost_one_example
+                expected_dc = eps * _cost_gradient_one_example[i][1][j][k]
+
+                atol = new_cost_one_example * machine_epsilon
+                np.testing.assert_allclose(
+                    actual=dc, desired=expected_dc, rtol=rtol, atol=atol
+                )
+
+                multilayer_perceptron.variables[i][1][j][k] += -eps
+
+        # The value of the previous layer:
+        for j in range(layout[i]):
+            multilayer_perceptron.variables[i - 1][2][0][j] += eps
+            new_cost_one_example = cost_one_example(
+                multilayer_perceptron, labeled_example=labeled_example
+            )
+            dc = new_cost_one_example - initial_cost_one_example
+            expected_dc = eps * _cost_gradient_one_example[i - 1][2][0][j]
+
+            atol = new_cost_one_example * machine_epsilon
+            np.testing.assert_allclose(
+                actual=dc, desired=expected_dc, rtol=rtol, atol=atol
+            )
+
+            multilayer_perceptron.variables[i - 1][2][0][j] += -eps
+
+    assert True
+
+    """
     nb_tests = 10
     # We'll verify that in nb_tests over a small nn, the cost decreases in the direction opposite
     # of the gradient. Since is only true in the linearized case. Thus, to smooth the cost function
     # (w.r.t. the parameters), we use a nn with a lot of parameters than for regular unit tests.
     nn_size = 10
-    multilayer_perceptron = script.MultilayerPerceptron([nn_size] * 4)
+    multilayer_perceptron = script.MultilayerPerceptron(
+        layout=[nn_size] * 4, dtype=np.float64
+    )
     for i in range(nb_tests):
         print(i)
         labeled_example = [np.random.rand(1, nn_size), np.random.rand(1, nn_size)]
@@ -305,18 +437,23 @@ def test_cost_gradient_one_example():
         _cost_gradient_one_example = cost_gradient_one_example(
             multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
         )
-        print(multilayer_perceptron.variables[1][0])
+        print(
+            f"initial multilayer_perceptron.variables[1][0] = {multilayer_perceptron.variables[1][0]}"
+        )
+        print(f"_cost_gradient_one_example[1][0] = {_cost_gradient_one_example[1][0]}")
         # We nudge the nn parameters into the direction opposite the gradient:
-        nudge_strenght = 10 ** (-4) * nn_size
+        nudge_strenght = 10 ** (-1) * nn_size
         for i, layer_variables in enumerate(multilayer_perceptron.variables):
             layer_variables[0] += -nudge_strenght * _cost_gradient_one_example[i][0]
             layer_variables[1] += -nudge_strenght * _cost_gradient_one_example[i][1]
 
-        print(multilayer_perceptron.variables[1][0])
+        print(
+            f"new multilayer_perceptron.variables[1][0] = {multilayer_perceptron.variables[1][0]}"
+        )
         new_cost_one_example = cost_one_example(
             multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
         )
         print(
             f"initial cost = {initial_cost_one_example} & new cost = {new_cost_one_example}"
         )
-        np.testing.assert_array_less(new_cost_one_example, initial_cost_one_example)
+        np.testing.assert_array_less(new_cost_one_example, initial_cost_one_example)"""
