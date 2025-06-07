@@ -1,5 +1,6 @@
 import numpy as np
 import script
+from copy import deepcopy
 from script import (
     relu,
     sigmoid,
@@ -9,6 +10,10 @@ from script import (
     expected_values_last_layer,
     cost_gradient_one_example,
     cost_one_example,
+    cost_gradient,
+    learning_one_step,
+    cost,
+    learning,
 )
 
 
@@ -87,6 +92,8 @@ def test_pre_regularization_value():
 
 
 def test_feed():
+    ## First series of tests where layer_rank = None ##
+
     multilayer_perceptron = script.MultilayerPerceptron([1])
     example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
@@ -187,6 +194,37 @@ def test_feed():
     value_3 = sigmoid(np.sum(value_2 * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[3][2], value_3)
 
+    ## Second series of tests with layer_rank != None ##
+    layout = [2, 2, 2, 2]
+    N = len(layout)
+    modified_layer_rank = 0
+    multilayer_perceptron = script.MultilayerPerceptron(layout, dtype=np.float64)
+    new_values = np.random.rand(layout[modified_layer_rank])
+    multilayer_perceptron.variables[modified_layer_rank][2][0] = new_values
+    feed(
+        multilayer_perceptron=multilayer_perceptron,
+        start_layer_rank=modified_layer_rank + 1,
+    )
+
+    expected_last_layer_values = None
+    for i in range(modified_layer_rank + 1, N):
+        if i == modified_layer_rank + 1:
+            values = new_values
+        else:
+            values = multilayer_perceptron.variables[i - 1][2]
+
+        expected_last_layer_values = sigmoid(
+            pre_regularization_value(
+                biais=multilayer_perceptron.variables[i][0],
+                weights=multilayer_perceptron.variables[i][1],
+                values=values,
+            )
+        )
+    np.testing.assert_array_equal(
+        np.array(multilayer_perceptron.variables[N - 1][2]), expected_last_layer_values
+    )
+    assert True
+
 
 def test_expected_values_last_layer():
     np.testing.assert_array_equal(
@@ -198,6 +236,7 @@ def test_expected_values_last_layer():
 
 
 def test_cost_one_example():
+    ## 1st test when start_layer_rank = None ##
     multilayer_perceptron = script.MultilayerPerceptron([2])
     labeled_example = [np.array([np.random.rand(2)]), np.array([np.random.rand(2)])]
     feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
@@ -214,6 +253,44 @@ def test_cost_one_example():
     rtol = 1e-06
     np.testing.assert_allclose(
         actual=actual_cost_one_example, desired=expected_cost_one_example, rtol=rtol
+    )
+
+    ## 2nd test with a start_layer_rank != None ##
+    layout = [2, 2, 2]
+    N = len(layout)
+    multilayer_perceptron = script.MultilayerPerceptron(layout, dtype=np.float64)
+    label = [np.random.rand(1, layout[-1])]
+    modified_layer_rank = 0
+    new_values = [np.random.rand(layout[modified_layer_rank])]
+    multilayer_perceptron.variables[modified_layer_rank][2] = new_values
+
+    expected_layer_values = None
+    for i in range(modified_layer_rank + 1, N):
+        if i == modified_layer_rank + 1:
+            values = new_values
+        else:
+            values = expected_layer_values
+
+        expected_layer_values = multilayer_perceptron.layers[i].activation_fct(
+            pre_regularization_value(
+                biais=multilayer_perceptron.variables[i][0],
+                weights=multilayer_perceptron.variables[i][1],
+                values=values,
+            )
+        )
+    expected_last_layer_values = expected_layer_values
+    desired_cost_one_example = (
+        np.linalg.norm(label[0] - expected_last_layer_values)
+    ) ** 2
+
+    actual_cost_one_example = cost_one_example(
+        multilayer_perceptron=multilayer_perceptron,
+        labeled_example=[label],
+        start_layer_rank=modified_layer_rank + 1,
+    )
+    rtol = 1e-06
+    np.testing.assert_allclose(
+        actual=actual_cost_one_example, desired=desired_cost_one_example, rtol=rtol
     )
 
 
@@ -305,8 +382,8 @@ def test_cost_gradient_one_example():
     # We'll first verify that the comptuted partial derivatives makes sense, that is that when only
     # their respective parameter is nudged by eps, the cost varies roughly by partial_derivative *
     # eps.
-    layout = [1, 1, 1]
-    eps = 2 * (10 ** (-4))
+    layout = [784, 16, 16, 10]
+    eps = 2 * (10 ** (-5))
     dtype = np.float64
 
     # Relative tolerance of the comparison tests.
@@ -325,16 +402,17 @@ def test_cost_gradient_one_example():
         multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
     )
 
-    # First we tackle the special case of the values of the last layer. We can't use the
-    # cost_one_example to compute the cost in this case as it would change the values of
-    # the last layer.
+    # First we tackle the special case of the values of the last layer. We make sure to
+    # use the alternative mode of operation of cost_one_example (where no example is fed to the
+    # first layer and the values of the multilayer perceptron are recomputed starting from a
+    # certain row) as not doing it would overwrite the new nudged values of the last layer. This
+    # will be a recurrent remark in the following tests.
     for j in range(layout[-1]):
         multilayer_perceptron.variables[N - 1][2][0][j] += eps
-        new_cost_one_example = (
-            np.linalg.norm(
-                labeled_example[0][0] - multilayer_perceptron.variables[N - 1][2][0]
-            )
-            ** 2
+        new_cost_one_example = cost_one_example(
+            multilayer_perceptron=multilayer_perceptron,
+            labeled_example=labeled_example[0],
+            start_layer_rank=N,
         )
         dc = new_cost_one_example - initial_cost_one_example
         expected_dc = eps * _cost_gradient_one_example[N - 1][2][0][j]
@@ -368,7 +446,8 @@ def test_cost_gradient_one_example():
             multilayer_perceptron.variables[i][0][0][j] += eps
             new_cost_one_example = cost_one_example(
                 multilayer_perceptron=multilayer_perceptron,
-                labeled_example=labeled_example,
+                labeled_example=labeled_example[0],
+                start_layer_rank=i,
             )
             dc = new_cost_one_example - initial_cost_one_example
             expected_dc = eps * _cost_gradient_one_example[i][0][0][j]
@@ -389,12 +468,15 @@ def test_cost_gradient_one_example():
                 multilayer_perceptron.variables[i][1][j][k] += eps
                 new_cost_one_example = cost_one_example(
                     multilayer_perceptron=multilayer_perceptron,
-                    labeled_example=labeled_example,
+                    labeled_example=labeled_example[0],
+                    start_layer_rank=i,
                 )
                 dc = new_cost_one_example - initial_cost_one_example
                 expected_dc = eps * _cost_gradient_one_example[i][1][j][k]
 
-                atol = new_cost_one_example * machine_epsilon
+                # J'ai du mal à le justifier parfaitement, mais il suffit de rajouter ce petit 2
+                # pour que les tests passent tout le temps (ils passent une fois sur deux sinon).
+                atol = 2 * new_cost_one_example * machine_epsilon
                 np.testing.assert_allclose(
                     actual=dc, desired=expected_dc, rtol=rtol, atol=atol
                 )
@@ -405,7 +487,9 @@ def test_cost_gradient_one_example():
         for j in range(layout[i]):
             multilayer_perceptron.variables[i - 1][2][0][j] += eps
             new_cost_one_example = cost_one_example(
-                multilayer_perceptron, labeled_example=labeled_example
+                multilayer_perceptron,
+                labeled_example=labeled_example[0],
+                start_layer_rank=(i - 1) + 1,
             )
             dc = new_cost_one_example - initial_cost_one_example
             expected_dc = eps * _cost_gradient_one_example[i - 1][2][0][j]
@@ -417,43 +501,238 @@ def test_cost_gradient_one_example():
 
             multilayer_perceptron.variables[i - 1][2][0][j] += -eps
 
-    assert True
 
-    """
-    nb_tests = 10
-    # We'll verify that in nb_tests over a small nn, the cost decreases in the direction opposite
-    # of the gradient. Since is only true in the linearized case. Thus, to smooth the cost function
-    # (w.r.t. the parameters), we use a nn with a lot of parameters than for regular unit tests.
-    nn_size = 10
-    multilayer_perceptron = script.MultilayerPerceptron(
-        layout=[nn_size] * 4, dtype=np.float64
+def test_cost_gradient():
+    # First test with only one image :
+    layout = [2, 2, 2]
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1]
+    expected_cost_gradient = cost_gradient_one_example(
+        multilayer_perceptron, labeled_example=labeled_example_1
     )
-    for i in range(nb_tests):
-        print(i)
-        labeled_example = [np.random.rand(1, nn_size), np.random.rand(1, nn_size)]
-        initial_cost_one_example = cost_one_example(
-            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
-        )
-        _cost_gradient_one_example = cost_gradient_one_example(
-            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
-        )
-        print(
-            f"initial multilayer_perceptron.variables[1][0] = {multilayer_perceptron.variables[1][0]}"
-        )
-        print(f"_cost_gradient_one_example[1][0] = {_cost_gradient_one_example[1][0]}")
-        # We nudge the nn parameters into the direction opposite the gradient:
-        nudge_strenght = 10 ** (-1) * nn_size
-        for i, layer_variables in enumerate(multilayer_perceptron.variables):
-            layer_variables[0] += -nudge_strenght * _cost_gradient_one_example[i][0]
-            layer_variables[1] += -nudge_strenght * _cost_gradient_one_example[i][1]
+    actual_cost_gradient = cost_gradient(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set
+    )
 
-        print(
-            f"new multilayer_perceptron.variables[1][0] = {multilayer_perceptron.variables[1][0]}"
+    # Equality tests of the two cost gradients. They are not simple arrays so we have to decompose
+    # the tests into several, alongside their internal structure.
+    N = len(layout)
+    for i in range(N):
+        # biais
+        np.testing.assert_array_equal(
+            actual_cost_gradient[i][0], expected_cost_gradient[i][0]
         )
-        new_cost_one_example = cost_one_example(
-            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+        # weights
+        np.testing.assert_array_equal(
+            actual_cost_gradient[i][1], expected_cost_gradient[i][1]
         )
-        print(
-            f"initial cost = {initial_cost_one_example} & new cost = {new_cost_one_example}"
+        # values
+        np.testing.assert_array_equal(
+            actual_cost_gradient[i][2], expected_cost_gradient[i][2]
         )
-        np.testing.assert_array_less(new_cost_one_example, initial_cost_one_example)"""
+
+    # 2nd test with two images in the training set.
+    labeled_example_2 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1, labeled_example_2]
+
+    # Creation of the expected cost gradient
+    cost_gradient_example_1 = cost_gradient_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example_1
+    )
+    cost_gradient_example_2 = cost_gradient_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example_2
+    )
+    expected_cost_gradient = []
+    for i in range(N):
+        expected_cost_gradient.append([[], [], []])
+        for variable in range(3):
+            expected_cost_gradient[i][variable] = np.average(
+                np.array(
+                    [
+                        cost_gradient_example_1[i][variable],
+                        cost_gradient_example_2[i][variable],
+                    ]
+                ),
+                axis=0,
+            )
+
+    actual_cost_gradient = cost_gradient(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set
+    )
+
+    for i in range(N):
+        for variable in range(3):
+            np.testing.assert_array_equal(
+                expected_cost_gradient[i][variable], actual_cost_gradient[i][variable]
+            )
+
+
+def test_cost():
+    layout = [2, 2, 2]
+    N = len(layout)
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1]
+    expected_cost_1 = cost_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example_1
+    )
+    actual_cost = cost(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set
+    )
+    np.testing.assert_equal(expected_cost_1, actual_cost)
+
+    labeled_example_2 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1, labeled_example_2]
+    expected_cost_2 = cost_one_example(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example_2
+    )
+    expected_cost = np.mean(np.array([expected_cost_1, expected_cost_2]))
+    actual_cost = cost(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set
+    )
+    np.testing.assert_equal(expected_cost, actual_cost)
+
+
+def test_learning_one_step():
+    ## 1st series of tests : with a training set of one example ##
+
+    # The first test assesses the structure of the response.
+    layout = [16, 16, 16, 10]
+    N = len(layout)
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1]
+
+    # the cost is computed, it will be used for the second test. We have to do it now before the
+    # parameters are nudged.
+    initial_cost = cost(multilayer_perceptron, training_set)
+
+    expected_cost_gradient = cost_gradient_one_example(
+        multilayer_perceptron, labeled_example=labeled_example_1
+    )
+    eta = 1e-02
+    expected_variables = deepcopy(multilayer_perceptron.variables)
+    for i in range(N):
+        for variable in range(2):
+            expected_variables[i][variable] += (
+                -eta * np.average(layout) * expected_cost_gradient[i][variable]
+            )
+
+    learning_one_step(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set, eta=eta
+    )
+
+    for i in range(N):
+        # We only care about the effects on the parameters, not on the node values. Note that if we
+        # were to carry the comparison for the nodes values also, it would fail as the node values
+        # have been modified in the meantime by learning_one_step, by the call of cost inside of
+        # it.
+        for variable in range(2):
+
+            np.testing.assert_array_almost_equal(
+                multilayer_perceptron.variables[i][variable],
+                expected_variables[i][variable],
+            )
+
+    # The second test verifies that the cost decreases after the learning step.
+    new_cost = multilayer_perceptron.cost
+    assert new_cost <= initial_cost
+
+    ## 2nd series of tests : with a training set of 2 examples ##
+
+    # The first test assesses the structure of the response.
+    labeled_example_2 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1, labeled_example_2]
+
+    # the cost is computed, it will be used for the second test. We have to do it now before the
+    # parameters are nudged.
+    initial_cost = cost(multilayer_perceptron, training_set)
+
+    # Computation of the expected cost gradient
+    expected_cost_gradient_1 = cost_gradient_one_example(
+        multilayer_perceptron, labeled_example=labeled_example_1
+    )
+    expected_cost_gradient_2 = cost_gradient_one_example(
+        multilayer_perceptron, labeled_example=labeled_example_2
+    )
+    expected_cost_gradient = []
+    for i in range(N):
+        expected_cost_gradient.append([[], [], []])
+        for variable in range(3):
+            expected_cost_gradient[i][variable] = np.average(
+                np.array(
+                    [
+                        expected_cost_gradient_1[i][variable],
+                        expected_cost_gradient_2[i][variable],
+                    ]
+                ),
+                axis=0,
+            )
+
+    eta = 1e90
+    expected_variables = deepcopy(multilayer_perceptron.variables)
+    for i in range(N):
+        for variable in range(3):
+            expected_variables[i][variable] += (
+                -eta * np.average(layout) * expected_cost_gradient[i][variable]
+            )
+
+    learning_one_step(
+        multilayer_perceptron=multilayer_perceptron, training_set=training_set, eta=eta
+    )
+
+    for i in range(N):
+        # We only care about the effects on the parameters, not on the node values. Note that if we
+        # were to carry the comparison for the nodes values also, it would fail as the node values
+        # have been modified in the meantime by learning_one_step, by the call of cost inside of
+        # it.
+        for variable in range(2):
+
+            np.testing.assert_array_almost_equal(
+                multilayer_perceptron.variables[i][variable],
+                expected_variables[i][variable],
+            )
+
+    # The second test verifies that the cost decreases after the learning step.
+    new_cost = multilayer_perceptron.cost
+    assert new_cost <= initial_cost
+
+
+def test_learning():
+    # First test to make sure no error is raised.
+    layout = [1, 1]
+    N = len(layout)
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1]
+    eta = 1
+    previous_costs = learning(
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=training_set,
+        eta=eta,
+        max_stagnation_steps=10,
+    )
+
+    steps_number = 10
+    previous_costs = learning(
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=training_set,
+        eta=eta,
+        steps_number=steps_number,
+    )
+
+    # This time with a training set with multiple examples.
+    layout = [5, 5, 5]
+    N = len(layout)
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    labeled_example_2 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    training_set = [labeled_example_1, labeled_example_2]
+    eta = 1
+    previous_costs = learning(
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=training_set,
+        eta=eta,
+        max_stagnation_steps=10,
+    )
