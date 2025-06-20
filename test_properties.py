@@ -6,14 +6,50 @@ relation, this script gathers functions which plot the cost during the learning 
 different values of these parameters, hoping to uncover experimentally their relationship.
 """
 
+from typing import Tuple, List
 import numpy as np
+from numpy.typing import NDArray
 import script
 from script import learning
 import mnist_reader
-from mnist_reader import load
+from mnist_reader import load_dataset
+
+
+def modify_dataset_structure(
+    loaded_dataset=Tuple[
+        Tuple[List[NDArray], List[int]], Tuple[List[NDArray], List[int]]
+    ]
+):
+    """
+    A small utility function to give the dataset the desired structure, that is
+    [List[NDArray,NDArray]]. The load_dataset function outputs a Tuple[Tuple[List[]]] where the
+    elements of the tuple are lists are NDArrays for images, and int for the labels.
+
+    Args:
+        loaded_dataset ([List[NDArray,NDArray]])
+
+    Returns:
+        (training_set, test_set) (tuple)
+
+    """
+    (x_train, y_train), (x_test, y_test) = loaded_dataset
+    nb_training_examples = len(y_train)
+    nb_test_examples = len(y_test)
+    training_set = []
+    test_set = []
+    for training_example, s in enumerate(x_train):
+        training_set.append([training_example, y_train[s]])
+    for test_example, s in enumerate(x_test):
+        test_example.append([test_example, y_test[s]])
+    return training_set, test_set
 
 
 def test_1():
+    (x_train, y_train), (x_test, y_test) = load_dataset(training_size=2)
+    training_set, test_set = modify_dataset_structure(
+        ((x_train, y_train), (x_test, y_test))
+    )
+    print(training_set)
     layout = [5, 5, 5]
     N = len(layout)
     multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)

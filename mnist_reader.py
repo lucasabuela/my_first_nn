@@ -66,11 +66,6 @@ class MnistDataloader(object):
 
 
 #
-# Verify Reading Dataset via MnistDataloader class
-#
-
-
-#
 # Set file paths based on added MNIST Datasets
 #
 INPUT_PATH = "./data"
@@ -104,10 +99,20 @@ def show_images(images, title_texts):
     plt.show()
 
 
-#
-# Load MINST dataset test
-#
-def load_dataset_test():
+def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
+    """
+    Load the dataset into 4 ready to use objects. This function expects in the repository the
+    presence of a "data" file containing the dataset in the form of four folders named "t10k-
+    images.idx3-ubyte", "t10k-labels.idx1-ubyte", "train-images.idx3-ubyte" and "train-labels.
+    idx1-ubyte", each oh them containing a file with the same name.
+
+    Args:
+        training_size (int): the number of examples in the training size. Default to 1000, so that
+            one learning step takes 1s.
+        old_format (bool): Wether the training set should be in the old format (the one I first
+            coded) List[List[NDArray, NDArray]] or the standard one :
+            Tuple[Tuple[List[NDArray], List[int]], Tuple[List[NDArray], List[int]]].
+    """
     mnist_dataloader = MnistDataloader(
         training_images_filepath,
         training_labels_filepath,
@@ -116,39 +121,24 @@ def load_dataset_test():
     )
     (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
 
-    #
-    # Show some random training and test images
-    #
-    images_2_show = []
-    titles_2_show = []
-    for i in range(0, 10):
-        r = random.randint(1, 60000)
-        images_2_show.append(x_train[r])
-        titles_2_show.append("training image [" + str(r) + "] =" + str(y_train[r]))
-    for i in range(0, 5):
-        r = random.randint(1, 10000)
-        images_2_show.append(x_test[r])
-        titles_2_show.append("test image[" + str(r) + "] =" + str(y_test[r]))
+    if not old_format:
+        return (x_train[: training_size - 1], y_train[: training_size - 1]), (
+            x_test,
+            y_test,
+        )
+    else:
+        training_set = []
+        test_set = []
+        for i in range(training_size):
+            training_set.append([[x_train[i], y_train[i]]])
+        for i in range(len(x_test)):
+            test_set.append([x_test[i], y_test[i]])
 
-    show_images(images_2_show, titles_2_show)
-
-
-def load_dataset(
-    training_size: int = 1000,
-) -> Tuple[Tuple[List[NDArray], List[NDArray]], Tuple[List[NDArray], List[NDArray]]]:
-    """ """
-    mnist_dataloader = MnistDataloader(
-        training_images_filepath,
-        training_labels_filepath,
-        test_images_filepath,
-        test_labels_filepath,
-    )
-    (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
-    return (x_train, y_train), (x_test, y_test)
+        return training_set, test_set
 
 
 def main():
-    load_test()
+    pass
 
 
 if __name__ == "__main__":
