@@ -1,4 +1,4 @@
-### My first neural network (in progress)
+# My first neural network (in progress)
 
 ## How to run the tests
 From the root directory, run `pytest` in the terminal.
