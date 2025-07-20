@@ -17,7 +17,12 @@ from mnist_reader import (
     test_labels_filepath,
     show_images,
     load_dataset,
+    download_dataset_from_internet,
 )
+
+
+def test_download_dataset_from_internet():
+    download_dataset_from_internet()
 
 
 def test_load_dataset():

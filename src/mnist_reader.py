@@ -8,10 +8,12 @@ precisely 10,000 examples.
 import struct
 from array import array
 import random
+import os
 from typing import Tuple, List
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.typing import NDArray
+import kagglehub
 
 
 #
@@ -99,6 +101,29 @@ def show_images(images, title_texts):
     plt.show()
 
 
+def download_dataset_from_internet():
+    """
+    This function downloads the dataset from https://www.kaggle.com/datasets/hojjatk/mnist-dataset.
+    It requires kagglehub to be set up (in particular having a Kaggle account, and having set up an
+    autentification key, if I remember well). It also puts it in the expected folder by subsequent
+    functions (./data) and in the correct format (see the docstring of load_dataset). If the
+    dataset is already downloaded (and present in ./data and with the useless scripts removed), the
+    function does nothing.
+    """
+    # First we make sure the dataset hasn't been downloaded yet. Running the function in this case
+    # would lead to an error.
+    if not os.path.isdir(INPUT_PATH):
+        handle = "hojjatk/mnist-dataset"
+        current_dataset_path = kagglehub.dataset_download(handle)
+        # Move the dataset to the /data folder
+        os.rename(current_dataset_path, INPUT_PATH)
+        # Delete four useless scripts in the downloaded dataset
+        os.remove(INPUT_PATH + "/t10k-images.idx3-ubyte")
+        os.remove(INPUT_PATH + "/t10k-labels.idx1-ubyte")
+        os.remove(INPUT_PATH + "/train-images.idx3-ubyte")
+        os.remove(INPUT_PATH + "/train-labels.idx1-ubyte")
+
+
 def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
     """
     Load the dataset into 4 ready to use objects. This function expects in the repository the
@@ -108,10 +133,16 @@ def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
 
     Args:
         training_size (int): the number of examples in the training size. Default to 1000, so that
-            one learning step takes 1s.
+            one learning step takes 1s (on my machine).
         old_format (bool): Wether the training set should be in the old format (the one I first
-            coded) List[List[NDArray, NDArray]] or the standard one :
+            coded) List[List[NDArray, int]] or the standard one :
             Tuple[Tuple[List[NDArray], List[int]], Tuple[List[NDArray], List[int]]].
+
+    Returns:
+        if old_format = False : (x_train, y_train), (x_test, y_test) where x is a List[NDArray] and
+            y is a List[int].
+        elif old_format = True : training_set, test_set where *_set is a list of examples, where
+            each example is a list of the form [np.array, int].
     """
     mnist_dataloader = MnistDataloader(
         training_images_filepath,
