@@ -147,7 +147,7 @@ class Layer:
             )
 
         # Finally, we define the arrays attributes. It's no surprising that we have to use a loop
-        # to do so, as they are define precisely to vectorize the computation.
+        # to do so, as they are defined precisely to vectorize the computation.
         biaises = []
         weights = []
         values = []
@@ -160,11 +160,11 @@ class Layer:
         # precision is unecessary here, and we need to save space. Note that we also require
         # the arrays created to be 2D (and not 1D which is the default behavior). It will be
         # required to perform matrices multiplication later on. We also use row vectors rather
-        # than column ones as in my notes because operations are slightly faster on them (as numpy
-        # and C underneath have the convention row-major). We could change the convention for these
-        # arrays but some numpys functions are optimized for row-major order, and might make row-
-        # major order copies of the arrays anyway. Thus, remember throughout the code that every
-        # matrix is the transposed of its counterpart in my notes.
+        # than column ones as in my initial notes (addendum : I've updated them now) because
+        # operations are slightly faster on them (as numpy and C underneath have the convention
+        # row-major). We could change the convention for these arrays but some numpys functions
+        # are optimized for row-major order, and might make row-major order copies of the arrays
+        # anyway.
         self.biaises = np.array(biaises, dtype=dtype, ndmin=2)
         self.weights = np.array(weights, dtype=dtype, ndmin=2)
         self.values = np.array(values, dtype=dtype, ndmin=2)
@@ -528,12 +528,12 @@ def learning(
 ):
     """
     Train the multilayer perceptron provided on the training set provided. Uses gradient
-    descent and retropropagation. Works in-place.
+    descent and retropropagation. Works in-place. The stop condition used is explained below.
 
     Args:
         multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
         training_set (list): the training set to learn from.
-        stagnation_epsilon (float): hyperparameter. Maximal variation of the gradient over
+        stagnation_epsilon (float): hyperparameter. Maximal variation of the cost over
             stagnation_steps below wich a local minimum is considered to have been found.
             Default to 0.1.
         max_stagnation_steps (int): the number of learning steps upon which the stagnation of
@@ -543,6 +543,9 @@ def learning(
         eta (float): "learning boldness/nudge strength". Hyperparameter. At each step of the
             gradient descent, parameters are nudged by -eta * ...() * grad C. Default to 1.
 
+    Returns:
+        previous_costs (list of floats): the list of cost over the training set during the learning
+            . Useful to debug.
     """
     previous_costs = [cost(multilayer_perceptron, training_set)]
     if steps_number is not None:

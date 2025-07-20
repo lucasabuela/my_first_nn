@@ -8,20 +8,22 @@ different values of these parameters, hoping to uncover experimentally their rel
 
 # A small work-around to execute the tests properly while using the src/tests layout in the
 # repository. Not the most professional. As designed, pytest has to be executed from the
-# source directory, not the test directory.
+# source directory, not the test directory. I also modified it so as to be able to launch debbug
+# sessions of this script. It wouldn't work at first because I used to use relative paths which
+# failed because their start location would be the folder tests (and not the root as when using
+# pytest).
 import sys
+import os
 
-sys.path.append("./src")
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 # Imports
 from typing import Tuple, List
 import numpy as np
 from numpy.typing import NDArray
-import script
-from script import learning
-import mnist_reader
-from mnist_reader import load_dataset
+from src.script import learning
+import dataset_reader
+from dataset_reader import load_dataset
 
 
 def modify_dataset_structure(
