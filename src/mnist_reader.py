@@ -104,11 +104,9 @@ def show_images(images, title_texts):
 def download_dataset_from_internet():
     """
     This function downloads the dataset from https://www.kaggle.com/datasets/hojjatk/mnist-dataset.
-    It requires kagglehub to be set up (in particular having a Kaggle account, and having set up an
-    autentification key, if I remember well). It also puts it in the expected folder by subsequent
-    functions (./data) and in the correct format (see the docstring of load_dataset). If the
-    dataset is already downloaded (and present in ./data and with the useless scripts removed), the
-    function does nothing.
+    It also puts it in the expected folder by subsequent functions (./data) and in the correct
+    format (see the docstring of load_dataset). If the dataset is already downloaded (and present
+    in ./data and with the useless scripts removed), the function does nothing.
     """
     # First we make sure the dataset hasn't been downloaded yet. Running the function in this case
     # would lead to an error.
