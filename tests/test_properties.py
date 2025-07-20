@@ -1,4 +1,6 @@
 """
+[This was the document I used for testing before playground.ipynb. I'm currently transfering it].
+
 The convergence of the parameters seem to depend heavily on the interplay between the nudge
 strenght, the general form of the nudge (should we use instead a condition based on the dot product
 of the two last cost_gradients ?) and the number and size of layers. To better understand their
