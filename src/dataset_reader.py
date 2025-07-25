@@ -164,11 +164,16 @@ def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
         test_set = []
         for i in range(training_size):
             label = expected_values_last_layer(y_train[i])
-            example = x_train[i]
+            # The seemingly innocuous following line make or break the rest of the code, as the fed
+            # fed image is expected to be a 2D line np.array, not a 1D array.
+            example = np.array(x_train[i], ndmin=2, dtype=np.float64)
+            # We also normalize the values of the examples (min = 0, max = 1) as the nn is tailored
+            # for this range.
+            example = example / 255
             training_set.append([label, example])
         for i in range(len(x_test)):
             label = expected_values_last_layer(y_test[i])
-            example = x_test[i]
+            example = np.array(x_test[i], ndmin=2, dtype=np.float64)
             test_set.append([label, example])
 
         return training_set, test_set

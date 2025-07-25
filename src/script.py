@@ -20,7 +20,9 @@ def sigmoid(x: float) -> float:
     """
     The sigmoid, used as an activation function.
     """
-    return 1 / (1 + np.exp(-x))
+    # Using 1 / (1 + np.exp(-x)) seems natural, but it raises an overflow error if |x| is too large
+    # ( precisely if x < -744 or x > 709). Thus, we add a test first.
+    return np.where(x >= -744, np.where(x <= 709, 1 / (1 + np.exp(-x)), 1), 0)
 
 
 def relu_derivative(x: float) -> float:
@@ -34,7 +36,16 @@ def sigmoid_derivative(x: float) -> float:
     """
     The derivative of the sigmoid.
     """
-    return -(-np.exp(-x)) / ((1 + np.exp(-x)) ** 2)
+    # We have to add a subtility here, because just using the formula will result in an error when
+    # x is too large ! When x <= -355 or x >= 710, the computation of sigmoid_derivative(x)
+    # requires the manipulation of intermediate terms that becomes too small or to big to be
+    # represented (as a float64 I guess). It's not a problem however as in these cases,
+    # true_sigmoid_derivative(x) << true_sigmoid_derivative(y) where y are values of z encountered
+    # uphill in the network. That is, even if we took into account these partial derivatives, they
+    # would result in variations of the variables in the lower branches negligeable to the
+    # variations in the upper branches. Thus we can safely set the value of sigmoid_derivative at 0
+    # in these cases.
+    return np.where(np.abs(x) <= 354, -(-np.exp(-x)) / ((1 + np.exp(-x)) ** 2), 0)
 
 
 def get_derivative_activation_fct(
@@ -138,7 +149,7 @@ class Layer:
             self.nodes.append(
                 Node(
                     biais=1 * (np.random.rand() - 0.5),
-                    weights=1 * np.random.rand(previous_layer_size),
+                    weights=1 * (np.random.rand(previous_layer_size) - 0.5),
                     value=1 * np.random.rand(),
                     y_coord=j,
                     layer=self,
