@@ -20,9 +20,30 @@ def sigmoid(x: float) -> float:
     """
     The sigmoid, used as an activation function.
     """
-    # Using 1 / (1 + np.exp(-x)) seems natural, but it raises an overflow error if |x| is too large
-    # ( precisely if x < -744 or x > 709). Thus, we add a test first.
-    return np.where(x >= -744, np.where(x <= 709, 1 / (1 + np.exp(-x)), 1), 0)
+    # Using 1 / (1 + np.exp(-x)) seems natural, but it raises an overflow error if x is too
+    # "negative" ( precisely if x < -709. Note that no error is raised if x is too large; and 0 is
+    # returned, which is an acceptable behavior). A first idea is to use :
+    #
+    # return np.where(x >= -709, 1 / (1 + np.exp(-x)), 1)
+    #
+    # It works. The only thing is that it raises warnings of overflow because the left expression
+    # is evaluated, even if it is not chosen after because x is too large. A method that avoids
+    # this is :
+    #
+    # return np.piecewise(x, [x >= -709, x < -709], [lambda y: 1 / (1 + np.exp(-y)), 1])
+    #
+    # It's almost perfect. It can still be slightly improved with :
+    return np.piecewise(
+        x,
+        [x >= -709, x < -709],
+        [lambda y: 1 / (1 + np.exp(-y)), lambda y: np.exp(y) / (np.exp(y) + 1)],
+    )
+    # It is better because when x is in [-744, -710], it returns the real (small) value rather than
+    # zero. It is very subtle, it stems from the fact that np.exp(x) "breaks" at 709 in the non-
+    # negative but -745 in the negative.
+    #
+    # One could wonder wether these approximations aren't detrimental for the proper working if the
+    # algorithm. I don't know yet how to show it, even intuitively. We'll see if it works.
 
 
 def relu_derivative(x: float) -> float:
@@ -36,16 +57,17 @@ def sigmoid_derivative(x: float) -> float:
     """
     The derivative of the sigmoid.
     """
-    # We have to add a subtility here, because just using the formula will result in an error when
-    # x is too large ! When x <= -355 or x >= 710, the computation of sigmoid_derivative(x)
-    # requires the manipulation of intermediate terms that becomes too small or to big to be
-    # represented (as a float64 I guess). It's not a problem however as in these cases,
-    # true_sigmoid_derivative(x) << true_sigmoid_derivative(y) where y are values of z encountered
-    # uphill in the network. That is, even if we took into account these partial derivatives, they
-    # would result in variations of the variables in the lower branches negligeable to the
-    # variations in the upper branches. Thus we can safely set the value of sigmoid_derivative at 0
-    # in these cases.
-    return np.where(np.abs(x) <= 354, -(-np.exp(-x)) / ((1 + np.exp(-x)) ** 2), 0)
+    # The same reasoning as for sigmoid applies. It is slightly more complicated here because of
+    # the intermediate terms of the expressions which becomes huge faster than in the regular
+    # sigmoid function. The frontier here is 354, which is rougly 709 / 2, which makes sense.
+    return np.piecewise(
+        x,
+        [x >= -354, x < -354],
+        [
+            lambda y: -(-np.exp(-y)) / ((1 + np.exp(-y)) ** 2),
+            lambda y: -(-np.exp(y)) / ((np.exp(y) + 1) ** 2),
+        ],
+    )
 
 
 def get_derivative_activation_fct(
