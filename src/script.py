@@ -509,15 +509,14 @@ def cost(
     Returns:
         _cost (np.float)
     """
-    _cost = np.average(
-        [
-            cost_one_example(
-                multilayer_perceptron=multilayer_perceptron,
-                labeled_example=labeled_example,
-            )
-            for labeled_example in training_set
-        ]
-    )
+    _costs = [
+        cost_one_example(
+            multilayer_perceptron=multilayer_perceptron,
+            labeled_example=labeled_example,
+        )
+        for labeled_example in training_set
+    ]
+    _cost = np.average(_costs)
     return _cost
 
 
