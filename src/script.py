@@ -553,6 +553,7 @@ def learning_one_step(
 def learning(
     multilayer_perceptron: MultilayerPerceptron,
     training_set: list[list[np.array, np.array]],
+    test_set: list[list[np.array, np.array]],
     stagnation_epsilon: float = 0.1,
     max_stagnation_steps: int = 3,
     steps_number=None,
@@ -565,6 +566,8 @@ def learning(
     Args:
         multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
         training_set (list): the training set to learn from.
+        test_set (list): If passed as an argument, returns the list of accuracies of the model on
+            this set after each learning step.
         stagnation_epsilon (float): hyperparameter. Maximal variation of the cost over
             stagnation_steps below wich a local minimum is considered to have been found.
             Default to 0.1.
@@ -578,8 +581,10 @@ def learning(
     Returns:
         previous_costs (list of floats): the list of cost over the training set during the learning
             . Useful to debug.
+        previous_accuracies (list of floats)
     """
     previous_costs = [cost(multilayer_perceptron, training_set)]
+    previous_accuracies = [accuracy(multilayer_perceptron, test_set)]
     if steps_number is not None:
         for _ in range(steps_number):
             learning_one_step(
@@ -588,6 +593,7 @@ def learning(
                 eta=eta,
             )
             previous_costs.append(multilayer_perceptron.cost)
+            previous_accuracies.append(accuracy(multilayer_perceptron, test_set))
     else:
         # We define the counter of current steps where the cost is in [cost_at_start +/-
         # stagnation_epsilon] where cost_at_start is the cost at the time the counter was started. The
@@ -608,12 +614,61 @@ def learning(
             else:
                 cost_at_start = multilayer_perceptron.cost
                 counter = 0
-    return previous_costs
+    return previous_costs, previous_accuracies
+
+
+def prediction_result(
+    multilayer_perceptron: MultilayerPerceptron, labeled_example: list
+) -> bool:
+    """
+    A small utility to declutter accuracy_evaluation. Have the model guess for the example. Returns
+    the 0-1 distance between its guess and the correct label.
+
+    Args:
+        multilayer_perceptron (MultilayerPerceptron)
+        labeled_example (list): of the form [label, example] where label and example are 2D
+            np.array.
+
+    Returns:
+        _prediction_result (bool)
+    """
+    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+    guess = np.argmax(multilayer_perceptron.variables[-1][2][0])
+    truth = np.argmax(labeled_example[0])
+    return guess == truth
+
+
+def accuracy(
+    multilayer_perceptron: MultilayerPerceptron,
+    test_set: list[list[np.array, np.array]],
+) -> float:
+    """
+    This function evaluates the trained (or untrained) model on a test set. It is similar to cost
+    with a different distance, the 0-1 distance rather than the L2-norm.
+
+    Args:
+        multilayer_perceptron (MultilayerPerceptron)
+        test_set (list): list of the form [labeled_examples] where labeled_example = [label,
+            example], label and example being np.arrays.
+
+    Returns:
+        accuracy (np.float): the proportion of sucessful guesses.
+    """
+    accuracy = np.average(
+        [
+            prediction_result(
+                multilayer_perceptron=multilayer_perceptron,
+                labeled_example=labeled_example,
+            )
+            for labeled_example in test_set
+        ]
+    )
+    return accuracy
 
 
 def main():
     # Initialization of the logging class.
-    logging.basiConfig(level="DEBUG")
+    logging.basicConfig(level="DEBUG")
 
     return 1
 

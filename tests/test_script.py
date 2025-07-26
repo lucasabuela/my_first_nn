@@ -9,9 +9,11 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-# Imports
+## Imports ##
+
 import numpy as np
 from copy import deepcopy
+import pytest
 from src import script
 from script import (
     relu,
@@ -26,11 +28,36 @@ from script import (
     learning_one_step,
     cost,
     learning,
+    prediction_result,
+    accuracy,
 )
 
 
-def test_1():
-    a = script.MultilayerPerceptron([3, 2, 1])
+# Construction of the random number generator, with a chosen seed, to ensure reproducibility of
+# the tests.
+rng = np.random.default_rng(seed=1)
+
+## Fixtures ##
+
+
+@pytest.fixture
+def little_mlp():
+    layout = [3, 2, 1]
+    return script.MultilayerPerceptron(layout)
+
+
+@pytest.fixture
+def standard_mlp():
+    """Standard because it is the one used in the classifier at the end of the project."""
+    layout = [784, 16, 16, 10]
+    return script.MultilayerPerceptron(layout)
+
+
+## Unit tests ##
+
+
+def test_1(little_mlp):
+    a = little_mlp
     b = a.layers[0]
     c = a.layers[1]
     d = a.layers[2]
@@ -40,8 +67,8 @@ def test_1():
     assert len(d.nodes[0].weights) == 2
 
 
-def test_2():
-    a = script.MultilayerPerceptron([784, 16, 16, 10])
+def test_2(standard_mlp):
+    a = standard_mlp
     b = a.layers[0]
     c = a.layers[1]
     d = a.layers[3]
@@ -747,4 +774,81 @@ def test_learning():
         training_set=training_set,
         eta=eta,
         max_stagnation_steps=10,
+    )
+
+
+def test_prediction_result():
+    layout = [1, 1]
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron.variables[1][0] = 0
+    multilayer_perceptron.variables[1][1][0][0] = 0
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    assert (
+        prediction_result(
+            multilayer_perceptron=multilayer_perceptron,
+            labeled_example=labeled_example_1,
+        )
+        == 1
+    )
+    layout = [1, 10]
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron.variables[1][0] = [0, -1, 0, 0, 0, 0, 0, 0, 0, 0]
+    multilayer_perceptron.variables[1][1] = np.array(
+        [
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+            [0],
+        ]
+    )
+    labeled_example_2 = [
+        np.array([[0, 1, 0, 0, 0, 0, 0, 0, 0, 0]]),
+        np.random.rand(1, layout[0]),
+    ]
+    assert (
+        prediction_result(
+            multilayer_perceptron=multilayer_perceptron,
+            labeled_example=labeled_example_2,
+        )
+        == 1
+    )
+    labeled_example_3 = [
+        np.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]]),
+        np.random.rand(1, layout[0]),
+    ]
+    assert (
+        prediction_result(
+            multilayer_perceptron=multilayer_perceptron,
+            labeled_example=labeled_example_3,
+        )
+        == 0
+    )
+
+
+def test_accuracy():
+    layout = [1, 10]
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
+    test_set_1 = [labeled_example_1]
+    assert accuracy(
+        multilayer_perceptron=multilayer_perceptron, test_set=test_set_1
+    ) == prediction_result(
+        multilayer_perceptron=multilayer_perceptron, labeled_example=test_set_1[0]
+    )
+    layout = [2, 2]
+    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    labeled_example_2 = [np.array([[1, 0]]), np.random.rand(1, 2)]
+    labeled_example_3 = [np.array([[0, 1]]), np.random.rand(1, 2)]
+    multilayer_perceptron.variables[1][0][0] = [-1, 0]
+    multilayer_perceptron.variables[1][1] = np.zeros(2)
+    test_set_2 = [labeled_example_2, labeled_example_3]
+    assert (
+        accuracy(multilayer_perceptron=multilayer_perceptron, test_set=test_set_2)
+        == 0.5
     )
