@@ -1,6 +1,7 @@
 # Imports
 from typing import Callable
 import logging
+import pickle
 from copy import deepcopy
 import numpy as np
 import matplotlib.pyplot as plt
@@ -664,6 +665,27 @@ def accuracy(
         ]
     )
     return accuracy
+
+
+def save_model(multilayer_perceptron: MultilayerPerceptron, name: str):
+    """
+    This function saves a multilayer perceptron to the "trained_models" directory with the name
+    "name". /!\ Beware, this function is meant to be used only inside playground.ipynb, as it
+    uses a relative path.
+    """
+    pickle.dump(
+        obj=multilayer_perceptron,
+        file=open(file=f"trained_models/{name}.pkl", mode="wb"),
+    )
+
+
+def load_model(name: str):
+    """
+    This function loads a multilayer perceptron from the "trained_models" directory with the name
+    "name". /!\ Beware, this function is meant to be used only inside playground.ipynb, as it
+    uses a relative path.
+    """
+    return pickle.load(file=open(file=f"trained_models/{name}.pkl", mode="rb"))
 
 
 def main():
