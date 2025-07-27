@@ -749,21 +749,24 @@ def test_learning():
     previous_costs = learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=training_set,
+        test_set=[],
         eta=eta,
         max_stagnation_steps=10,
+        stochastic=False,
     )
 
     steps_number = 10
     previous_costs = learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=training_set,
+        test_set=training_set,
         eta=eta,
         steps_number=steps_number,
+        stochastic=False,
     )
 
     # This time with a training set with multiple examples.
     layout = [5, 5, 5]
-    N = len(layout)
     multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
     labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
     labeled_example_2 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
@@ -772,8 +775,20 @@ def test_learning():
     previous_costs = learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=training_set,
+        test_set=training_set,
         eta=eta,
         max_stagnation_steps=10,
+        stochastic=False,
+    )
+
+    # Test of the stochastic feature
+    previous_costs = learning(
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=training_set,
+        test_set=training_set,
+        eta=eta,
+        max_stagnation_steps=10,
+        stochastic=True,
     )
 
 

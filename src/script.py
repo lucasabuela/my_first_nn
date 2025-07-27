@@ -5,6 +5,8 @@ import pickle
 from copy import deepcopy
 import numpy as np
 import matplotlib.pyplot as plt
+import tqdm
+import random
 
 # import torch
 
@@ -559,10 +561,12 @@ def learning(
     max_stagnation_steps: int = 3,
     steps_number=None,
     eta: float = 1,
+    stochastic: bool = True,
+    step_training_size: int = 1000,
 ):
     """
-    Train the multilayer perceptron provided on the training set provided. Uses gradient
-    descent and retropropagation. Works in-place. The stop condition used is explained below.
+    Train the multilayer perceptron provided on the training set provided. Uses gradient descent
+    and retropropagation. Works in-place. The stop condition used is explained below.
 
     Args:
         multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
@@ -578,6 +582,9 @@ def learning(
             value is also provided, override the epsilon rule.
         eta (float): "learning boldness/nudge strength". Hyperparameter. At each step of the
             gradient descent, parameters are nudged by -eta * ...() * grad C. Default to 1.
+        stochastic (bool): Wether the gradient desccent ought to be stochastic or not. True by
+            default. The number of examples selected at each step is step_training_size.
+        step_training_size (int)
 
     Returns:
         previous_costs (list of floats): the list of cost over the training set during the learning
@@ -587,10 +594,18 @@ def learning(
     previous_costs = [cost(multilayer_perceptron, training_set)]
     previous_accuracies = [accuracy(multilayer_perceptron, test_set)]
     if steps_number is not None:
-        for _ in range(steps_number):
+        for _ in tqdm.tqdm(
+            range(steps_number)
+        ):  # tqdm here adds a progress bar, nothing more.
+            if stochastic:
+                training_set_at_this_step = random.sample(
+                    population=training_set, k=step_training_size
+                )
+            else:
+                training_set_at_this_step = training_set
             learning_one_step(
                 multilayer_perceptron=multilayer_perceptron,
-                training_set=training_set,
+                training_set=training_set_at_this_step,
                 eta=eta,
             )
             previous_costs.append(multilayer_perceptron.cost)
@@ -653,9 +668,9 @@ def accuracy(
             example], label and example being np.arrays.
 
     Returns:
-        accuracy (np.float): the proportion of sucessful guesses.
+        _accuracy (np.float): the proportion of sucessful guesses.
     """
-    accuracy = np.average(
+    _accuracy = np.average(
         [
             prediction_result(
                 multilayer_perceptron=multilayer_perceptron,
@@ -664,28 +679,28 @@ def accuracy(
             for labeled_example in test_set
         ]
     )
-    return accuracy
+    return _accuracy
 
 
-def save_model(multilayer_perceptron: MultilayerPerceptron, name: str):
+def save_object(object, name: str):
     """
-    This function saves a multilayer perceptron to the "trained_models" directory with the name
+    This function saves a multilayer perceptron to the "saved_objects" directory with the name
     "name". /!\ Beware, this function is meant to be used only inside playground.ipynb, as it
     uses a relative path.
     """
     pickle.dump(
-        obj=multilayer_perceptron,
-        file=open(file=f"trained_models/{name}.pkl", mode="wb"),
+        obj=object,
+        file=open(file=f"saved_objects/{name}.pkl", mode="wb"),
     )
 
 
-def load_model(name: str):
+def load_object(name: str):
     """
-    This function loads a multilayer perceptron from the "trained_models" directory with the name
+    This function loads a multilayer perceptron from the "saved_objects" directory with the name
     "name". /!\ Beware, this function is meant to be used only inside playground.ipynb, as it
     uses a relative path.
     """
-    return pickle.load(file=open(file=f"trained_models/{name}.pkl", mode="rb"))
+    return pickle.load(file=open(file=f"saved_objects/{name}.pkl", mode="rb"))
 
 
 def main():
