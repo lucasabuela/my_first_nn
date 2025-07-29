@@ -557,48 +557,41 @@ def learning_one_step(
         return _cost_gradient
 
 
-def consecutive_gradients_magnified_cosine(
-    cost_gradient_1: list, cost_gradient_2: list
-) -> float:
+def flatten_cost_gradient(_cost_gradient: list) -> np.array:
     """
-    A small utility to declutter learning. Computes the number-of-parameters-th root of the cosinus
-    of the angle of the two provided costs gradients. Before that, flatten them to a 1D-array,
-    delete the partial derivative w.r.t. the node values and the biaises and weights of the first
-    layer (all of which are irrelevant).
+    cost_gradient have a nested structure (designed for efficency of computation). It is a list of
+    lists, one for each layer. Each list is made of three np.arrays. The first one represents the
+    biaises, the second one the weights and the last ones the values. This function flattens
+    cost_gradient, remove the unnecessaries partial derivatives w.r.t to the values of all layers
+    and the biaises and weights of the first layers (all of which are irrelevant because they change
+    depending on the last image fed to the model in one case, and because they are NaN in the other).
+    """
+    flattened_grad = np.array([])
+    for i in range(1, len(_cost_gradient)):
+        # biaises
+        flattened_grad = np.concatenate((flattened_grad, _cost_gradient[i][0][0]))
 
-    The
+        # weights
+        dcdw = np.reshape(a=_cost_gradient[i][1], newshape=-1)
+        flattened_grad = np.concatenate((flattened_grad, dcdw))
+
+    return flattened_grad
+
+
+def consecutive_gradients_cosine(cost_gradient_1: list, cost_gradient_2: list) -> float:
     """
-    flattened_grads = {
-        "flattened_grad_1": np.array([]),
-        "flattened_grad_2": np.array([]),
-    }
-    cost_gradients = {
-        "cost_gradient_1": cost_gradient_1,
-        "cost_gradient_2": cost_gradient_2,
-    }
-    for s in range(1, 3):
-        for i in range(1, len(cost_gradient_1)):
-            # biaises
-            flattened_grads[f"flattened_grad_{s}"] = np.concatenate(
-                (
-                    flattened_grads[f"flattened_grad_{s}"],
-                    cost_gradients[f"cost_gradient_{s}"][i][0][0],
-                )
-            )
-            # weights
-            dcdw = np.reshape(a=cost_gradients[f"cost_gradient_{s}"][i][1], newshape=-1)
-            flattened_grads[f"flattened_grad_{s}"] = np.concatenate(
-                (flattened_grads[f"flattened_grad_{s}"], dcdw)
-            )
+    A small utility to declutter learning. Computes the cosine of the angle of the two provided
+    costs gradients. Before that, flatten them to a 1D-array, delete the partial derivative w.r.t.
+    the node values and the biaises and weights of the first layer (all of which are irrelevant).
+    """
+    flattened_grad_1 = flatten_cost_gradient(_cost_gradient=cost_gradient_1)
+    flattened_grad_2 = flatten_cost_gradient(_cost_gradient=cost_gradient_2)
 
     inner_product = float(
-        np.inner(
-            flattened_grads["flattened_grad_1"], flattened_grads["flattened_grad_2"]
-        )
+        np.inner(flattened_grad_1, flattened_grad_2)
     )  # The result of np.inner is a np.float.
     cosine_of_angle = inner_product / (
-        np.linalg.norm(flattened_grads["flattened_grad_1"])
-        * np.linalg.norm(flattened_grads["flattened_grad_2"])
+        np.linalg.norm(flattened_grad_1) * np.linalg.norm(flattened_grad_2)
     )
     return cosine_of_angle
 
@@ -606,16 +599,17 @@ def consecutive_gradients_magnified_cosine(
 def learning(
     multilayer_perceptron: MultilayerPerceptron,
     training_set: list[list[np.array, np.array]],
-    test_set: list[list[np.array, np.array]] = [[]],
+    test_set: list[list[np.array, np.array]] = None,
     stagnation_epsilon: float = 0.1,
     max_stagnation_steps: int = 3,
     steps_number=None,
     eta: float = 1,
     stochastic: bool = True,
     step_training_size: int = 1000,
-    computes_training_costs_during_training: bool = False,
-    computes_accuracies_during_training: bool = False,
-    computes_consecutive_gradients_magnified_cosines: bool = False,
+    computes_training_costs: bool = False,
+    computes_accuracies: bool = False,
+    computes_gradients_norms: bool = False,
+    computes_consecutive_gradients_cosines: bool = False,
 ):
     """
     Train the multilayer perceptron provided on the training set provided. Uses gradient descent
@@ -638,35 +632,37 @@ def learning(
         stochastic (bool): Wether the gradient desccent ought to be stochastic or not. True by
             default. The number of examples selected at each step is step_training_size.
         step_training_size (int)
-        computes_training_costs_during_training (bool): and returns them. Quite useful. Adds time
+        computes_training_costs (bool): at each learning step and returns them. Quite useful. Adds
+            time (how much ? 50% ? to be found). Default to False.
+        computes_accuracies (bool): at each learning step and returns them. Quite useful. Adds time
             (how much ? 50% ? to be found). Default to False.
-        computes_accuracies_during_training (bool): and returns them. Quite useful. Adds time (how
-            much ? 50% ? to be found). Default to False.
-        computes_consecutive_gradients_magnified_cosines (bool): and returns them. Adds time (how much
+        computes_gradients_norms (bool): at each learning step and returns them. Default to False.
+        computes_consecutive_gradients_cosines (bool): and returns them. Adds time (how much
             ? Probably less than the other two). The idea behind it is to see if the parameters are
             evolving in the same direction, in which case it might be a good idea to increase the
-            "step size". /!\ Beware, the returned values are not exactly the cosines of the angles,
-            but the number-of-parameters-th root of the cosines of the angles. Otherwise, they all would
-            be equal to zero. This is because in high dimensions, angles of two random vectors are
-            almost always equal to zero (you can convince yourself of it mentally by imaginining
-            two unit vectors in 1D, then 2D then 3D). It's the same kind of phenomenon that breaks
-            density based clustering in high dimensions, because all the distances get packed around
-            their mean).
+            "step size".
 
     Returns:
         metrics_during_training (dict): of the form {"costs_during_training" : list,
-            "accuracies_during_training": list, "consecutive_gradients_angles"}. Only the
-            requested metrics are included. If is empty, the function doesn't return it.
+            "accuracies_during_training": list, "gradients_norms_during_training",
+            "consecutive_gradients_angles"}. Only the requested metrics are included. If is empty,
+            the function doesn't return it.
     """
     metrics_during_training = {}
 
     # Cette section est améliorable, clarifiable je pense. For ... in metrics_to_computes: ?
-    if computes_training_costs_during_training:
-        costs_during_training = [cost(multilayer_perceptron, training_set)]
-    if computes_accuracies_during_training:
-        accuracies_during_training = [accuracy(multilayer_perceptron, test_set)]
-    if computes_consecutive_gradients_magnified_cosines:
-        consecutive_gradients_magnified_cosines = []
+    if computes_training_costs:
+        costs_during_training = [
+            cost(multilayer_perceptron, training_set)
+        ]  # Starts before the first learning step (at =(after) the 0-th learning step)
+    if computes_accuracies:
+        accuracies_during_training = [
+            accuracy(multilayer_perceptron, test_set)
+        ]  # Starts before the first learning step (at the 0-th learning step)
+    if computes_gradients_norms:
+        gradients_norms_during_training = []  # Starts at the first learning step
+    if computes_consecutive_gradients_cosines:
+        consecutive_gradients_cosines = []  # Starts at the first learning step
         previous_cost_gradient = cost_gradient_one_example(
             multilayer_perceptron=multilayer_perceptron, labeled_example=training_set[0]
         )
@@ -686,26 +682,26 @@ def learning(
                 multilayer_perceptron=multilayer_perceptron,
                 training_set=training_set_at_this_step,
                 eta=eta,
-                returns_cost_gradient=computes_consecutive_gradients_magnified_cosines,
+                returns_cost_gradient=computes_consecutive_gradients_cosines,
             )  # Note that if computes_consecutive_gradients.. = False, cost_gradient = None. I
             # chose this over introducing yet again another if condition.
 
-            if computes_training_costs_during_training:
+            if computes_training_costs:
                 costs_during_training.append(multilayer_perceptron.cost)
-            if computes_accuracies_during_training:
+            if computes_accuracies:
                 accuracies_during_training.append(
                     accuracy(multilayer_perceptron, test_set)
                 )
-            if computes_consecutive_gradients_magnified_cosines:
-                _consecutive_gradients_magnified_cosine = (
-                    consecutive_gradients_magnified_cosine(
-                        cost_gradient_1=previous_cost_gradient,
-                        cost_gradient_2=_cost_gradient,
-                    )
+            if computes_gradients_norms:
+                gradients_norms_during_training.append(
+                    np.linalg.norm(flatten_cost_gradient(_cost_gradient))
                 )
-                consecutive_gradients_magnified_cosines.append(
-                    _consecutive_gradients_magnified_cosine
+            if computes_consecutive_gradients_cosines:
+                _consecutive_gradients_cosine = consecutive_gradients_cosine(
+                    cost_gradient_1=previous_cost_gradient,
+                    cost_gradient_2=_cost_gradient,
                 )
+                consecutive_gradients_cosines.append(_consecutive_gradients_cosine)
                 previous_cost_gradient = _cost_gradient
     else:
         # We define the counter of current steps where the cost is in [cost_at_start +/-
@@ -729,19 +725,25 @@ def learning(
                 cost_at_start = multilayer_perceptron.cost
                 counter = 0
 
-    if computes_training_costs_during_training:
+    if computes_training_costs:
         metrics_during_training["costs_during_training"] = costs_during_training
-    if computes_accuracies_during_training:
+    if computes_accuracies:
         metrics_during_training["accuracies_during_training"] = (
             accuracies_during_training
         )
-    if computes_consecutive_gradients_magnified_cosines:
-        metrics_during_training["consecutive_gradients_magnified_cosines"] = (
-            consecutive_gradients_magnified_cosines
+    if computes_gradients_norms:
+        metrics_during_training["gradients_norms_during_training"] = (
+            gradients_norms_during_training
+        )
+    if computes_consecutive_gradients_cosines:
+        metrics_during_training["consecutive_gradients_cosines"] = (
+            consecutive_gradients_cosines
         )
 
     if metrics_during_training != {}:
         return metrics_during_training
+    else:
+        return None
 
 
 def prediction_result(

@@ -26,7 +26,8 @@ from script import (
     cost_gradient,
     learning_one_step,
     cost,
-    consecutive_gradients_magnified_cosine,
+    flatten_cost_gradient,
+    consecutive_gradients_cosine,
     learning,
     prediction_result,
     accuracy,
@@ -769,7 +770,31 @@ def test_learning_one_step():
     )
 
 
-def test_consecutive_gradients_magnified_cosine():
+def test_flatten_cost_gradient():
+    layout = [2, 1]
+    multilayer_perceptron = little_mlp(layout=layout)
+    _training_set = training_set(
+        label_size=layout[-1], example_size=layout[0], training_set_size=1
+    )
+    _cost_gradient = cost_gradient(
+        multilayer_perceptron=multilayer_perceptron, training_set=_training_set
+    )
+    actual_flattened_cost_gradient = flatten_cost_gradient(
+        _cost_gradient=_cost_gradient
+    )
+    expected_flattened_cost_gradient = np.array(
+        [
+            _cost_gradient[1][0][0][0],
+            _cost_gradient[1][1][0][0],
+            _cost_gradient[1][1][0][1],
+        ]
+    )
+    np.testing.assert_array_equal(
+        actual_flattened_cost_gradient, expected_flattened_cost_gradient
+    )
+
+
+def test_consecutive_gradients_cosine():
     layout = [3, 2, 1]
     multilayer_perceptron = little_mlp(layout=layout)
     _training_set = training_set(
@@ -781,10 +806,10 @@ def test_consecutive_gradients_magnified_cosine():
     cost_gradient_2 = cost_gradient(
         multilayer_perceptron, training_set=_training_set[0:1]
     )
-    _consecutive_gradients_magnified_cosine = consecutive_gradients_magnified_cosine(
+    _consecutive_gradients_cosine = consecutive_gradients_cosine(
         cost_gradient_1=cost_gradient_1, cost_gradient_2=cost_gradient_2
     )
-    assert isinstance(_consecutive_gradients_magnified_cosine, float)
+    assert isinstance(_consecutive_gradients_cosine, float)
 
 
 def test_learning():
@@ -844,7 +869,8 @@ def test_learning():
     (
         costs_during_training,
         accuracies_during_training,
-        consecutive_gradients_magnified_cosines,
+        gradients_norms_during_training,
+        consecutive_gradients_cosines,
     ) = learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=_training_set,
@@ -852,9 +878,10 @@ def test_learning():
         eta=eta,
         max_stagnation_steps=10,
         stochastic=True,
-        computes_training_costs_during_training=True,
-        computes_accuracies_during_training=True,
-        computes_consecutive_gradients_magnified_cosines=True,
+        computes_training_costs=True,
+        computes_accuracies=True,
+        computes_gradients_norms=True,
+        computes_consecutive_gradients_cosines=True,
     )
 
 
