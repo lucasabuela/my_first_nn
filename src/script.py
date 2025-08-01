@@ -599,17 +599,11 @@ def consecutive_gradients_cosine(cost_gradient_1: list, cost_gradient_2: list) -
 def learning(
     multilayer_perceptron: MultilayerPerceptron,
     training_set: list[list[np.array, np.array]],
-    test_set: list[list[np.array, np.array]] = None,
-    stagnation_epsilon: float = 0.1,
-    max_stagnation_steps: int = 3,
-    steps_number=None,
-    eta: float = 1,
+    eta: float,
+    stop_condition: str = "fixed_steps_number",
     stochastic: bool = True,
-    step_training_size: int = 1000,
-    computes_training_costs: bool = False,
-    computes_accuracies: bool = False,
-    computes_gradients_norms: bool = False,
-    computes_consecutive_gradients_cosines: bool = False,
+    metrics_to_track: list[str] = [""],
+    **kwargs,
 ):
     """
     Train the multilayer perceptron provided on the training set provided. Uses gradient descent
@@ -618,62 +612,73 @@ def learning(
     Args:
         multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
         training_set (list): the training set to learn from.
-        test_set (list): Optional. If computes_accuracies_during_training, returns the list of
-            accuracies of the model on this set after each learning step.
-        stagnation_epsilon (float): hyperparameter. Maximal variation of the cost over
-            stagnation_steps below wich a local minimum is considered to have been found.
-            Default to 0.1.
-        max_stagnation_steps (int): the number of learning steps upon which the stagnation of
-            learning is compared to the stagnation threshold epsilon. Default to 3.
-        steps_number (int): Optional. Number of learning steps to undergo. If an epsilon
-            value is also provided, override the epsilon rule.
+        stop_condition (str): Either "fixed_steps_number" or "stagnation". If = fixed_steps_numbers
+            , a fixed number of learning steps steps_number are undergone. If = stagnation,
+            learning steps are undergone until the training cost doesn't variate more than
+            stagnation_espilon over max_stagnation_steps.
         eta (float): "learning boldness/nudge strength". Hyperparameter. At each step of the
-            gradient descent, parameters are nudged by -eta * ...() * grad C. Default to 1.
+            gradient descent, parameters are nudged by -eta * ...() * grad C.
         stochastic (bool): Wether the gradient desccent ought to be stochastic or not. True by
             default. The number of examples selected at each step is step_training_size.
-        step_training_size (int)
-        computes_training_costs (bool): at each learning step and returns them. Quite useful. Adds
-            time (how much ? 50% ? to be found). Default to False.
-        computes_accuracies (bool): at each learning step and returns them. Quite useful. Adds time
-            (how much ? 50% ? to be found). Default to False.
-        computes_gradients_norms (bool): at each learning step and returns them. Default to False.
-        computes_consecutive_gradients_cosines (bool): and returns them. Adds time (how much
-            ? Probably less than the other two). The idea behind it is to see if the parameters are
-            evolving in the same direction, in which case it might be a good idea to increase the
-            "step size".
+        metrics_to_track (list): The list of metrics to track during training. Useful for
+            exploration. Includes "training_costs" (cost on the set used for training at each step)
+            , "accuracies" (on the test set test_set provided as a kwargs), "gradients_norms" and
+            "consecutive_gradients_cosines". The two first add significant time (~50%) while the
+            last two are negligeable. Defaults to an empty list.
+
+    **Kwargs:
+        steps_number (int): If stop_condition=fixed_steps_number. Number of learning steps to
+            undergo.
+        stagnation_epsilon (float): If stop_condition=stagnation. Maximal variation of the cost
+            over stagnation_steps below wich a local minimum is considered to have been found.
+            No default value because depends too much on the problem.
+        max_stagnation_steps (int): If stop_condition=stagnation. Number of learning steps upon
+            which the stagnation of learning is compared to the stagnation threshold epsilon.
+            Default to 3.
+        step_training_size (int): If stochastic=True. Size of the subset of the training set used
+            for learning at each step. Defaults to 1000.
+        test_set (list): If computes_accuracies_during_training, returns the list of accuracies of
+            the model on this set after each learning step.
 
     Returns:
-        metrics_during_training (dict): of the form {"costs_during_training" : list,
-            "accuracies_during_training": list, "gradients_norms_during_training",
-            "consecutive_gradients_angles"}. Only the requested metrics are included. If is empty,
-            the function doesn't return it.
+        tracked_metrics (dict): of the form {"training_costs" : list, "accuracies": list,
+            "gradients_norms", "consecutive_gradients_angles"}. Only the requested metrics are
+            included. If is empty, the function doesn't return it.
     """
-    metrics_during_training = {}
+    # Defaults values of kwargs (maybe a cleaner way of organising the code ?)
+    default_steps_number = 100
+    default_max_stagnation_steps = 3
+    default_step_training_size = 1000
+
+    tracked_metrics = {}
 
     # Cette section est améliorable, clarifiable je pense. For ... in metrics_to_computes: ?
-    if computes_training_costs:
+    if "training_costs" in metrics_to_track:
         costs_during_training = [
             cost(multilayer_perceptron, training_set)
         ]  # Starts before the first learning step (at =(after) the 0-th learning step)
-    if computes_accuracies:
+    if "accuracies" in metrics_to_track:
         accuracies_during_training = [
-            accuracy(multilayer_perceptron, test_set)
+            accuracy(multilayer_perceptron, kwargs["test_set"])
         ]  # Starts before the first learning step (at the 0-th learning step)
-    if computes_gradients_norms:
+    if "gradients_norms" in metrics_to_track:
         gradients_norms_during_training = []  # Starts at the first learning step
-    if computes_consecutive_gradients_cosines:
-        consecutive_gradients_cosines = []  # Starts at the first learning step
+    if "consecutive_gradients_cosines" in metrics_to_track:
+        consecutive_gradients_cosines_during_training = (
+            []
+        )  # Starts at the first learning step
         previous_cost_gradient = cost_gradient_one_example(
             multilayer_perceptron=multilayer_perceptron, labeled_example=training_set[0]
         )
 
-    if steps_number is not None:
+    if stop_condition == "fixed_steps_number":
         for _ in tqdm.tqdm(
-            range(steps_number)
+            range(kwargs.get("steps_number", default_steps_number))
         ):  # tqdm here adds a progress bar, nothing more.
             if stochastic:
                 training_set_at_this_step = random.sample(
-                    population=training_set, k=step_training_size
+                    population=training_set,
+                    k=kwargs.get("step_training_size", default_step_training_size),
                 )
             else:
                 training_set_at_this_step = training_set
@@ -682,35 +687,42 @@ def learning(
                 multilayer_perceptron=multilayer_perceptron,
                 training_set=training_set_at_this_step,
                 eta=eta,
-                returns_cost_gradient=computes_consecutive_gradients_cosines,
+                returns_cost_gradient=(
+                    "consecutive_gradients_cosines" in metrics_to_track
+                ),
             )  # Note that if computes_consecutive_gradients.. = False, cost_gradient = None. I
             # chose this over introducing yet again another if condition.
 
-            if computes_training_costs:
+            if "training_costs" in metrics_to_track:
                 costs_during_training.append(multilayer_perceptron.cost)
-            if computes_accuracies:
+            if "accuracies" in metrics_to_track:
                 accuracies_during_training.append(
-                    accuracy(multilayer_perceptron, test_set)
+                    accuracy(multilayer_perceptron, kwargs["test_set"])
                 )
-            if computes_gradients_norms:
+            if "gradients_norms" in metrics_to_track:
                 gradients_norms_during_training.append(
                     np.linalg.norm(flatten_cost_gradient(_cost_gradient))
                 )
-            if computes_consecutive_gradients_cosines:
+            if "consecutive_gradients_cosines" in metrics_to_track:
                 _consecutive_gradients_cosine = consecutive_gradients_cosine(
                     cost_gradient_1=previous_cost_gradient,
                     cost_gradient_2=_cost_gradient,
                 )
-                consecutive_gradients_cosines.append(_consecutive_gradients_cosine)
+                consecutive_gradients_cosines_during_training.append(
+                    _consecutive_gradients_cosine
+                )
                 previous_cost_gradient = _cost_gradient
-    else:
+
+    elif stop_condition == "stagnation":
         # We define the counter of current steps where the cost is in [cost_at_start +/-
         # stagnation_epsilon] where cost_at_start is the cost at the time the counter was started. The
         # counter restarts when the cost escapes this interval.
         costs_during_training = [cost(multilayer_perceptron, training_set)]
         cost_at_start = costs_during_training[0]
         counter = 0
-        while counter < max_stagnation_steps:
+        while counter < kwargs.get(
+            "max_stagnation_steps", default_max_stagnation_steps
+        ):
             learning_one_step(
                 multilayer_perceptron=multilayer_perceptron,
                 training_set=training_set,
@@ -719,31 +731,29 @@ def learning(
 
             costs_during_training.append(multilayer_perceptron.cost)
 
-            if np.abs(cost_at_start - multilayer_perceptron.cost) < stagnation_epsilon:
+            if (
+                np.abs(cost_at_start - multilayer_perceptron.cost)
+                < kwargs["stagnation_epsilon"]
+            ):
                 counter += 1
             else:
                 cost_at_start = multilayer_perceptron.cost
                 counter = 0
 
-    if computes_training_costs:
-        metrics_during_training["costs_during_training"] = costs_during_training
-    if computes_accuracies:
-        metrics_during_training["accuracies_during_training"] = (
-            accuracies_during_training
-        )
-    if computes_gradients_norms:
-        metrics_during_training["gradients_norms_during_training"] = (
-            gradients_norms_during_training
-        )
-    if computes_consecutive_gradients_cosines:
-        metrics_during_training["consecutive_gradients_cosines"] = (
-            consecutive_gradients_cosines
+    if "training_costs" in metrics_to_track:
+        tracked_metrics["training_costs"] = costs_during_training
+    if "accuracies" in metrics_to_track:
+        tracked_metrics["accuracies"] = accuracies_during_training
+    if "gradients_norms" in metrics_to_track:
+        tracked_metrics["gradients_norms"] = gradients_norms_during_training
+    if "consecutive_gradients_cosines" in metrics_to_track:
+        tracked_metrics["consecutive_gradients_cosines"] = (
+            consecutive_gradients_cosines_during_training
         )
 
-    if metrics_during_training != {}:
-        return metrics_during_training
-    else:
-        return None
+    if tracked_metrics != {}:
+        return tracked_metrics
+    return None
 
 
 def prediction_result(

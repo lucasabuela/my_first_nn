@@ -823,10 +823,9 @@ def test_learning():
     learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=_training_set,
-        test_set=[],
+        stop_condition="stagnation",
         eta=eta,
-        max_stagnation_steps=10,
-        stochastic=False,
+        stagnation_epsilon=0.01,
     )
 
     steps_number = 10
@@ -850,8 +849,9 @@ def test_learning():
         multilayer_perceptron=multilayer_perceptron,
         training_set=_training_set,
         test_set=_training_set,
+        stop_condition="stagnation",
         eta=eta,
-        max_stagnation_steps=10,
+        stagnation_epsilon=0.1,
         stochastic=False,
     )
 
@@ -861,27 +861,25 @@ def test_learning():
         training_set=_training_set,
         test_set=_training_set,
         eta=eta,
-        max_stagnation_steps=10,
         stochastic=True,
+        step_training_size=2,
     )
 
     # Test of the metrics_during_training feature:
-    (
-        costs_during_training,
-        accuracies_during_training,
-        gradients_norms_during_training,
-        consecutive_gradients_cosines,
-    ) = learning(
+    tracked_metrics = learning(
         multilayer_perceptron=multilayer_perceptron,
         training_set=_training_set,
         test_set=_training_set,
         eta=eta,
-        max_stagnation_steps=10,
+        steps_number=10,
         stochastic=True,
-        computes_training_costs=True,
-        computes_accuracies=True,
-        computes_gradients_norms=True,
-        computes_consecutive_gradients_cosines=True,
+        step_training_size=2,
+        metrics_to_track=[
+            "training_costs",
+            "accuracies",
+            "gradients_norms",
+            "consecutive_gradients_cosines",
+        ],
     )
 
 
