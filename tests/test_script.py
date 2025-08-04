@@ -11,10 +11,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 
 ## Imports ##
 
-import numpy as np
 from copy import deepcopy
+import numpy as np
+import pytest
 from src import script
-from script import (
+from src.script import (
     relu,
     sigmoid,
     sigmoid_derivative,
@@ -31,6 +32,7 @@ from script import (
     learning,
     prediction_result,
     accuracy,
+    vectorize_learning_set,
 )
 
 
@@ -59,13 +61,13 @@ def standard_mlp(dtype: type = np.float64) -> script.MultilayerPerceptron:
     return script.MultilayerPerceptron(layout=layout, dtype=dtype)
 
 
-def labeled_example(label_size: int, example_size: int) -> list[np.array, np.array]:
+def labeled_example(label_size: int, example_size: int) -> list[np.ndarray, np.ndarray]:
     return [np.random.rand(1, label_size), np.random.rand(1, example_size)]
 
 
 def training_set(
     label_size: int, example_size: int, training_set_size: int
-) -> list[list[np.array, np.array]]:
+) -> list[list[np.ndarray, np.ndarray]]:
     return [
         labeled_example(label_size=label_size, example_size=example_size)
         for _ in range(training_set_size)
@@ -147,6 +149,19 @@ def test_pre_regularization_value():
     np.testing.assert_array_almost_equal(
         pre_regularization_value(biais=biais, weights=weights, values=values),
         _pre_regularization_value,
+    )
+    # Cas doublement vectoriel
+    batch_size = 2
+    biais = np.random.rand(batch_size, 2)
+    values = np.random.rand(batch_size, 3)
+    weights = np.random.rand(batch_size, 3)
+    expected_pre_regularization_value = [
+        pre_regularization_value(biais=biais[s], weights=weights, values=values[s])
+        for s in range(batch_size)
+    ]
+    np.testing.assert_array_almost_equal(
+        pre_regularization_value(biais=biais, weights=weights, values=values),
+        expected_pre_regularization_value,
     )
 
 
@@ -288,13 +303,32 @@ def test_feed():
         np.array(multilayer_perceptron.variables[N - 1][2]), expected_last_layer_values
     )
 
+    # Test with several examples at the same time
+    batch_size = 2
+    multilayer_perceptron = script.MultilayerPerceptron([2, 2, 2, 2])
+    example = np.random.rand(batch_size, 2)
+    feed(multilayer_perceptron=multilayer_perceptron, example=example)
+    a = multilayer_perceptron.variables[0][2]
+    w = multilayer_perceptron.variables[1][1]
+    b = multilayer_perceptron.variables[1][0]
+    value_1 = relu(pre_regularization_value(biais=b, weights=w, values=a))
+    w = multilayer_perceptron.variables[2][1]
+    b = multilayer_perceptron.variables[2][0]
+    value_2 = relu(pre_regularization_value(biais=b, weights=w, values=value_1))
+    w = multilayer_perceptron.variables[3][1]
+    b = multilayer_perceptron.variables[3][0]
+    value_3 = sigmoid(pre_regularization_value(biais=b, weights=w, values=value_2))
+    np.testing.assert_allclose(
+        actual=multilayer_perceptron.variables[3][2], desired=value_3, rtol=rtol
+    )
+
 
 def test_expected_values_last_layer():
     np.testing.assert_array_equal(
-        expected_values_last_layer(0), np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        expected_values_last_layer(0), np.array([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
     )
     np.testing.assert_array_equal(
-        expected_values_last_layer(1), np.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+        expected_values_last_layer(1), np.array([[0, 1, 0, 0, 0, 0, 0, 0, 0, 0]])
     )
 
 
@@ -683,7 +717,10 @@ def test_learning_one_step():
             )
 
     learning_one_step(
-        multilayer_perceptron=multilayer_perceptron, training_set=_training_set, eta=eta
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=_training_set,
+        eta=eta,
+        inertia=False,
     )
 
     for i in range(N):
@@ -742,7 +779,10 @@ def test_learning_one_step():
             )
 
     learning_one_step(
-        multilayer_perceptron=multilayer_perceptron, training_set=_training_set, eta=eta
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=_training_set,
+        eta=eta,
+        inertia=False,
     )
 
     for i in range(N):
@@ -766,8 +806,30 @@ def test_learning_one_step():
         multilayer_perceptron=multilayer_perceptron,
         training_set=_training_set,
         eta=eta,
+        inertia=False,
         returns_cost_gradient=True,
     )
+
+    ## A test of the inertia feature
+    multilayer_perceptron = little_mlp(layout=[2, 2])
+    _training_set = training_set(label_size=2, example_size=2, training_set_size=2)
+    previous_cost_gradient = cost_gradient(
+        multilayer_perceptron=multilayer_perceptron, training_set=_training_set
+    )
+    initial_cost = cost(
+        multilayer_perceptron=multilayer_perceptron, training_set=_training_set
+    )
+
+    learning_one_step(
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=_training_set,
+        eta=eta,
+        inertia=True,
+        inertia_strength=0.2,
+        previous_cost_gradient=previous_cost_gradient,
+    )
+    new_cost = multilayer_perceptron.cost
+    assert new_cost < initial_cost
 
 
 def test_flatten_cost_gradient():
@@ -825,6 +887,7 @@ def test_learning():
         training_set=_training_set,
         stop_condition="stagnation",
         eta=eta,
+        inertia=False,
         stagnation_epsilon=0.01,
     )
 
@@ -836,6 +899,7 @@ def test_learning():
         eta=eta,
         steps_number=steps_number,
         stochastic=False,
+        inertia=False,
     )
 
     # This time with a training set with multiple examples.
@@ -853,6 +917,7 @@ def test_learning():
         eta=eta,
         stagnation_epsilon=0.1,
         stochastic=False,
+        inertia=False,
     )
 
     # Test of the stochastic feature
@@ -863,6 +928,7 @@ def test_learning():
         eta=eta,
         stochastic=True,
         step_training_size=2,
+        inertia=False,
     )
 
     # Test of the metrics_during_training feature:
@@ -880,6 +946,7 @@ def test_learning():
             "gradients_norms",
             "consecutive_gradients_cosines",
         ],
+        inertia=False,
     )
 
 
@@ -957,4 +1024,101 @@ def test_accuracy():
     assert (
         accuracy(multilayer_perceptron=multilayer_perceptron, test_set=test_set_2)
         == 0.5
+    )
+    # Case with batches containing more than one labeled example
+    layout = [2, 2]
+    multilayer_perceptron = little_mlp(layout=layout)
+    test_set = training_set(label_size=2, example_size=2, training_set_size=10)
+    vectorized_test_set = vectorize_learning_set(
+        learning_set=test_set, max_batch_size=10
+    )
+    assert accuracy(
+        multilayer_perceptron=multilayer_perceptron, test_set=vectorized_test_set
+    ) == accuracy(multilayer_perceptron=multilayer_perceptron, test_set=test_set)
+    vectorized_test_set = vectorize_learning_set(
+        learning_set=test_set, max_batch_size=2
+    )
+    assert accuracy(
+        multilayer_perceptron=multilayer_perceptron, test_set=vectorized_test_set
+    ) == np.average(
+        [
+            accuracy(
+                multilayer_perceptron=multilayer_perceptron,
+                test_set=[labeled_examples_batch],
+            )
+            for labeled_examples_batch in vectorized_test_set
+        ]
+    )
+    # Case where the last batch is not full (len(learning_set)%max_batch_size != 0)
+    vectorized_test_set = vectorize_learning_set(
+        learning_set=test_set, max_batch_size=3
+    )
+    assert accuracy(
+        multilayer_perceptron=multilayer_perceptron, test_set=vectorized_test_set
+    ) == np.average(
+        [
+            accuracy(
+                multilayer_perceptron=multilayer_perceptron,
+                test_set=[labeled_examples_batch],
+            )
+            for labeled_examples_batch in vectorized_test_set
+        ]
+    )
+
+
+def test_vectorize_learning_set_errors():
+    # Test of the error handling
+    _learning_set = training_set(label_size=1, example_size=1, training_set_size=1)
+    max_batch_size = 2
+    with pytest.raises(
+        expected_exception=ValueError,
+        match="The maximum batch size has to be smaller than the size of the learning set",
+    ):
+        _ = vectorize_learning_set(
+            learning_set=_learning_set, max_batch_size=max_batch_size
+        )
+
+
+@pytest.mark.parametrize(
+    argnames="_learning_set,max_batch_size,expected_output",
+    argvalues=[
+        ([[np.array([[0]]), np.array([[0]])]], 1, [[np.array([[0]]), np.array([[0]])]]),
+        (
+            [[np.array([[0]]), np.array([[1]])], [np.array([[3]]), np.array([[4]])]],
+            1,
+            [[np.array([[0]]), np.array([[1]])], [np.array([[3]]), np.array([[4]])]],
+        ),
+        (
+            [[np.array([[0]]), np.array([[1]])], [np.array([[3]]), np.array([[4]])]],
+            2,
+            [[np.array([[0], [3]]), np.array([[1], [4]])]],
+        ),
+        (
+            [
+                [np.array([[0]]), np.array([[1]])],
+                [np.array([[3]]), np.array([[4]])],
+                [np.array([[6]]), np.array([[7]])],
+            ],
+            2,
+            [
+                [np.array([[0], [3]]), np.array([[1], [4]])],
+                [np.array([[6]]), np.array([[7]])],
+            ],
+        ),
+        (
+            [
+                [np.array([[0, 1]]), np.array([[0, 1]])],
+                [np.array([[3, 4]]), np.array([[3, 4]])],
+            ],
+            2,
+            [[np.array([[0, 1], [3, 4]]), np.array([[0, 1], [3, 4]])]],
+        ),
+    ],
+)
+def test_vectorize_learning_set(_learning_set, max_batch_size, expected_output):
+    np.testing.assert_equal(
+        actual=vectorize_learning_set(
+            learning_set=_learning_set, max_batch_size=max_batch_size
+        ),
+        desired=expected_output,
     )

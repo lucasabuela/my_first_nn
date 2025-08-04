@@ -7,12 +7,10 @@ precisely 10,000 examples.
 
 import struct
 from array import array
-import random
 import os
-from typing import Tuple, List
+from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
-from numpy.typing import NDArray
 import kagglehub
 from src.script import expected_values_last_layer
 
@@ -95,7 +93,7 @@ def show_images(images, title_texts):
         image = x[0].reshape(28, 28)
         title_text = x[1]
         plt.subplot(rows, cols, index)
-        plt.imshow(image, cmap=plt.cm.gray)
+        plt.imshow(image, cmap="gray")
         if title_text != "":
             plt.title(title_text, fontsize=15)
         index += 1
@@ -141,7 +139,7 @@ def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
         if old_format = False : (x_train, y_train), (x_test, y_test) where x is a List[NDArray] and
             y is a List[int].
         elif old_format = True : training_set, test_set where *_set is a list of labeled examples,
-            where each labeled example is of the form [label, example]. Example is a np.array AND
+            where each labeled example is of the form [label, example]. Example is a np.ndarray AND
             label also. Label is the the output on the last layer that the neural network should
             have being fed the example. The function src.script.expected_values_last_layer is used
             to turn a label in the form of an int to the expected form.
@@ -165,7 +163,7 @@ def load_dataset(training_size: int = 1000, old_format: bool = False) -> Tuple:
         for i in range(training_size):
             label = expected_values_last_layer(y_train[i])
             # The seemingly innocuous following line make or break the rest of the code, as the fed
-            # fed image is expected to be a 2D line np.array, not a 1D array.
+            # fed image is expected to be a 2D line np.ndarray, not a 1D array.
             example = np.array(x_train[i], ndmin=2, dtype=np.float64)
             # We also normalize the values of the examples (min = 0, max = 1) as the nn is tailored
             # for this range.
