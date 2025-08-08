@@ -21,4 +21,4 @@ The dataset used is a subset of the classical MNIST database of handwritten digi
 There's a dedicated function to download it : `download_dataset_from_internet` in `src/mnist_reader.py`.  
 
 ## AI usage
-Through the completion of this project, AI is extensively used, and only used, to answer syntax questions or understanding and dealing with error messages. In particular, it is not used to write extensive portions of the code, as it would defeat the purpose of the project, i.e. learn through struggle.
+Through the completion of this project, AI is extensively used, and only used, to answer syntax questions or understanding and dealing with error messages. In particular, it is not used to write more than one-liners, as it would defeat the purpose of the project, i.e. learn through struggle.

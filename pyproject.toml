@@ -14,9 +14,11 @@ dependencies = [
     "notebook==7.4",
     "ipython==9.4",
     "ipykernel==6.30",
+    "ipympl==0.9",
 ]
 
 [project.optional-dependencies]
 dev = [
     "line_profiler == 5.0",
+    "memory_profiler==0.61",
 ]
