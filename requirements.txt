@@ -1,4 +1,0 @@
-numpy==1.26
-matplotlib==3.8
-kagglehub==0.3 # Used to interact with kaggle (where the dataset is downloaded from)
-tqdm==4.66 # Add progress bars

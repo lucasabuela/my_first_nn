@@ -3,6 +3,9 @@
 ## Abstract
 My first neural network. I will try to represent, and train, from scratch, the multilayer perceptron presented in 3b1b explanation series on NN.
 
+## How to build the project
+This project uses a few libraries. To add them to the environment, from the root directory, run `pip install .`. They are listed in the `pyproject.toml` file. You might also install them manually.
+
 ## How to run the tests
 From the root directory, run `pytest` in the terminal. To run only one test script, run `pytest tests/<test_script_name>` from root.
 

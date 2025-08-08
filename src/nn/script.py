@@ -466,9 +466,9 @@ def cost_gradient(
     return _cost_gradient
 
 
-def cost_one_example(
+def cost_one_batch(
     multilayer_perceptron: MultilayerPerceptron,
-    labeled_example: list,
+    labeled_examples_batch: list,
     start_layer_rank: int = None,
 ):
     """Make the multilayer perceptron guess for the provided example and computes the square of the
@@ -480,20 +480,24 @@ def cost_one_example(
 
     Args:
         multilayer_perceptron (MultilayerPerceptron)
-        labeled_example (list): If a start_layer_rank is provided, of the form [label]. Else, of
-            the form [label, example]. "label" and "example" are 2D row arrays of size
-            respectively the size of the last layer and the size of the first layer. Note that
-            label is not a str, or an int, it has to be directly the output on the last layer that
-            the neural network should have. A small function tailored to each problem should be
-            used to turn a label in natural language into the corresponding array of output values.
+        labeled_examples_batch (list): If a start_layer_rank is provided, of the form [label]. Else
+            , of the form [labels_batch, examples_batch]. "labels_batch" and "examples_batch" are 2D
+            row arrays of size respectively (nbs of examples in the batch * size of the last layer)
+            and (nbs of examples in the batch *size of the first layer). Note that label is not a
+            str, or an int, it has to be directly the output on the last layer that the neural
+            network should have. A small function tailored to each problem should be used to turn
+            a label in natural language into the corresponding array of output values.
         start_layer_rank (int). Optional. Cf function description.
 
     Returns:
-        _cost_one_example (float): with the highest precision between the one of the
+        _cost_one_batch (float): with the highest precision between the one of the
             parameters of multilayer_perceptron.variables and the labeled_example. ?
     """
     if start_layer_rank is None:
-        feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+        feed(
+            multilayer_perceptron=multilayer_perceptron,
+            example=labeled_examples_batch[1],
+        )
     else:
         feed(
             multilayer_perceptron=multilayer_perceptron,
@@ -501,10 +505,16 @@ def cost_one_example(
         )
 
     N = len(multilayer_perceptron.variables)
-    return (
-        np.linalg.norm(labeled_example[0] - multilayer_perceptron.variables[N - 1][2])
+    # Note that precising axis=1 is optional in the case with one example, but it is added so that
+    # the function can be reused in the multiple-examples case.
+    _costs = (
+        np.linalg.norm(
+            labeled_examples_batch[0] - multilayer_perceptron.variables[N - 1][2],
+            axis=1,
+        )
         ** 2
     )
+    return np.average(_costs)
 
 
 def cost(
@@ -517,19 +527,22 @@ def cost(
     Args:
         multilayer_perceptron (MultilayerPerceptron)
         training_set (list): list of the form [labeled_examples] where labeled_example = [label,
-            example], label and example being np.ndarrays.
+            example], label and example being 2D np.ndarrays. Alternatively, of the equivalent
+            form [labeled_examples_batches] where labeled_examples_batch = [labels_batch,
+            examples_batch], labels_batch and examples_batch being 2D np.arrays.
 
     Returns:
         _cost (float)
     """
     _costs = [
-        cost_one_example(
+        cost_one_batch(
             multilayer_perceptron=multilayer_perceptron,
-            labeled_example=labeled_example,
+            labeled_examples_batch=labeled_examples_batch,
         )
-        for labeled_example in training_set
+        for labeled_examples_batch in training_set
     ]
-    _cost = np.average(_costs)
+    weights = [len(labeled_examples_batch) for labeled_examples_batch in training_set]
+    _cost = np.average(a=_costs, weights=weights)
     return _cost
 
 

@@ -3,7 +3,7 @@ multilayer_perceptron = script.MultilayerPerceptron([784,16,16,10])
 10-04 s.
 
 Ccl : feed sera sans doute négligeable devant cost_gradient. A priori cost_gradient_one_example et
-feed auront le même odg, car les deux parcourent le graphe une fois avec quelques calculs à chaque fois ?
+feed auront le même odg, car les deux parcourent le graphe une fois avec quelques calculs en plus à chaque fois ?
 
 >>> time(function = script.cost_gradient_one_example, multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example)
 7 * 10-04 s.

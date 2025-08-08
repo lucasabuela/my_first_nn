@@ -12,7 +12,7 @@ from typing import Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 import kagglehub
-from src.script import expected_values_last_layer
+from nn.script import expected_values_last_layer
 
 
 #

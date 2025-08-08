@@ -1,21 +1,11 @@
-# A small work-around to execute the tests properly while using the src/tests layout in the
-# repository. Not the most professional. As designed, pytest has to be executed from the
-# source directory, not the test directory. I also modified it so as to be able to launch debbug
-# sessions of this script. It wouldn't work at first because I used to use relative paths which
-# failed because their start location would be the folder tests (and not the root as when using
-# pytest).
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-
 ## Imports ##
 
 from copy import deepcopy
 import numpy as np
 import pytest
-from src import script
-from src.script import (
+import nn
+from nn.script import (
+    MultilayerPerceptron,
     relu,
     sigmoid,
     sigmoid_derivative,
@@ -23,7 +13,7 @@ from src.script import (
     feed,
     expected_values_last_layer,
     cost_gradient_one_example,
-    cost_one_example,
+    cost_one_batch,
     cost_gradient,
     learning_one_step,
     cost,
@@ -45,20 +35,18 @@ rng = np.random.default_rng(seed=1)
 I've had trouble with implementing fixtures in my code, specifically when trying to request a 
 fixture from another one while passing it only part of the parameters passed to the first one.
 I could probably get around by turning some of my fixtures into functions but I decided to turn 
-them all into functions.
+them all into functions, and use pytest.mark.parametrize in a direct way.
 """
 
 
-def little_mlp(
-    layout: list[int], dtype: type = np.float64
-) -> script.MultilayerPerceptron:
-    return script.MultilayerPerceptron(layout=layout, dtype=dtype)
+def mlp(layout: list[int], dtype: type = np.float64) -> MultilayerPerceptron:
+    return MultilayerPerceptron(layout=layout, dtype=dtype)
 
 
-def standard_mlp(dtype: type = np.float64) -> script.MultilayerPerceptron:
+def standard_mlp(dtype: type = np.float64) -> MultilayerPerceptron:
     """Standard because it is the one used in the classifier at the end of the project."""
     layout = [784, 16, 16, 10]
-    return script.MultilayerPerceptron(layout=layout, dtype=dtype)
+    return MultilayerPerceptron(layout=layout, dtype=dtype)
 
 
 def labeled_example(label_size: int, example_size: int) -> list[np.ndarray, np.ndarray]:
@@ -79,7 +67,7 @@ def training_set(
 
 def test_1():
     layout = [3, 2, 1]
-    a = little_mlp(layout)
+    a = mlp(layout)
     b = a.layers[0]
     c = a.layers[1]
     d = a.layers[2]
@@ -106,26 +94,6 @@ def test_2():
         e[0][0], np.array([None] * 784, dtype=np.float16, ndmin=2), equal_nan=True
     )
     assert len(e[1][1][15]) == 784
-
-
-def test_multiply():
-    """
-    To make sure I understand well the np.multiply function.
-    """
-    values = [2]
-    weights = [1, 2]
-    assert np.array_equal(np.multiply(values, weights), np.array([2, 4]))
-    values = np.array([2, -2])
-    weights = np.array([[1, 2], [3, 4]])
-    assert np.array_equal(np.multiply(values, weights), np.array([[2, -4], [6, -8]]))
-
-
-def test_sum():
-    """
-    To make sure I understand well the np.sum function.
-    """
-    A = np.array([[1, 2], [3, 4]])
-    assert np.array_equal(np.sum(A, axis=1), np.array([3, 7]))
 
 
 def test_pre_regularization_value():
@@ -168,20 +136,20 @@ def test_pre_regularization_value():
 def test_feed():
     ## First series of tests where layer_rank = None ##
 
-    multilayer_perceptron = script.MultilayerPerceptron([1])
+    multilayer_perceptron = mlp(layout=[1])
     example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     np.testing.assert_array_equal(
         multilayer_perceptron.variables[0][2], np.array([[1]])
     )
-    multilayer_perceptron = script.MultilayerPerceptron([2])
+    multilayer_perceptron = mlp(layout=[2])
     example = np.array([1, 2])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     np.testing.assert_array_equal(
         multilayer_perceptron.variables[0][2], np.array([1, 2])
     )
 
-    multilayer_perceptron = script.MultilayerPerceptron([1, 1])
+    multilayer_perceptron = mlp(layout=[1, 1])
     example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2][0][0]
@@ -190,7 +158,7 @@ def test_feed():
     value = sigmoid((a * w) - b)
     assert multilayer_perceptron.variables[1][2][0][0] == value
 
-    multilayer_perceptron = script.MultilayerPerceptron([1, 2])
+    multilayer_perceptron = mlp(layout=[1, 2])
     example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -199,7 +167,7 @@ def test_feed():
     value = sigmoid(np.sum(a * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
-    multilayer_perceptron = script.MultilayerPerceptron([2, 1])
+    multilayer_perceptron = mlp(layout=[2, 1])
     example = np.array([[1, 2]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -208,7 +176,7 @@ def test_feed():
     value = sigmoid(np.sum(a * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
-    multilayer_perceptron = script.MultilayerPerceptron([2, 2])
+    multilayer_perceptron = mlp(layout=[2, 2])
     example = np.array([[1, 2]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -217,7 +185,7 @@ def test_feed():
     value = sigmoid(np.sum(a * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[1][2], value)
 
-    multilayer_perceptron = script.MultilayerPerceptron([1, 1, 1])
+    multilayer_perceptron = mlp(layout=[1, 1, 1])
     example = np.array([[1]])
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -229,7 +197,7 @@ def test_feed():
     value_2 = sigmoid(np.sum(value_1 * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[2][2], value_2)
 
-    multilayer_perceptron = script.MultilayerPerceptron([2, 2, 2])
+    multilayer_perceptron = mlp(layout=[2, 2, 2])
     example = np.random.rand(1, 2)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -241,7 +209,7 @@ def test_feed():
     value_2 = sigmoid(np.sum(value_1 * w, axis=1) - b)
     np.testing.assert_array_equal(multilayer_perceptron.variables[2][2], value_2)
 
-    multilayer_perceptron = script.MultilayerPerceptron([784, 16, 16])
+    multilayer_perceptron = mlp(layout=[784, 16, 16])
     example = np.random.rand(1, 784)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -256,7 +224,7 @@ def test_feed():
         actual=multilayer_perceptron.variables[2][2], desired=value_2, rtol=rtol
     )
 
-    multilayer_perceptron = script.MultilayerPerceptron([784, 16, 16, 10])
+    multilayer_perceptron = mlp(layout=[784, 16, 16, 10])
     example = np.random.rand(1, 784)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -277,7 +245,7 @@ def test_feed():
     layout = [2, 2, 2, 2]
     N = len(layout)
     modified_layer_rank = 0
-    multilayer_perceptron = script.MultilayerPerceptron(layout, dtype=np.float64)
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
     new_values = np.random.rand(layout[modified_layer_rank])
     multilayer_perceptron.variables[modified_layer_rank][2][0] = new_values
     feed(
@@ -305,7 +273,7 @@ def test_feed():
 
     # Test with several examples at the same time
     batch_size = 2
-    multilayer_perceptron = script.MultilayerPerceptron([2, 2, 2, 2])
+    multilayer_perceptron = mlp(layout=[2, 2, 2, 2])
     example = np.random.rand(batch_size, 2)
     feed(multilayer_perceptron=multilayer_perceptron, example=example)
     a = multilayer_perceptron.variables[0][2]
@@ -332,34 +300,40 @@ def test_expected_values_last_layer():
     )
 
 
-def test_cost_one_example():
-    ## 1st test when start_layer_rank = None ##
-    multilayer_perceptron = script.MultilayerPerceptron([2])
-    _labeled_example = labeled_example(label_size=2, example_size=2)
-    feed(multilayer_perceptron=multilayer_perceptron, example=_labeled_example[1])
-    expected_cost_one_example = 0
-    for j in range(2):
-        expected_cost_one_example += (
-            _labeled_example[0][0][j] - multilayer_perceptron.variables[0][2][0][j]
-        ) ** 2
-    actual_cost_one_example = cost_one_example(
-        multilayer_perceptron=multilayer_perceptron, labeled_example=_labeled_example
+@pytest.mark.parametrize(argnames="batch_size", argvalues=[(1), (2)])
+def test_cost_one_batch(batch_size):
+    # Test with start_layer_rank = None #
+    layout = [2, 2]
+    multilayer_perceptron = mlp(layout=layout)
+    test_set = training_set(label_size=2, example_size=2, training_set_size=2)
+    vectorized_test_set = vectorize_learning_set(
+        learning_set=test_set, max_batch_size=batch_size
     )
-    # Rounding can raise errors unrelated with the thested behavior. Thus, we test that the two
-    # values are close enough in proportion rather than being equal.
-    rtol = 1e-06
-    np.testing.assert_allclose(
-        actual=actual_cost_one_example, desired=expected_cost_one_example, rtol=rtol
+    labeled_examples_batch = vectorized_test_set[0]
+
+    actual_cost_one_batch = cost_one_batch(
+        multilayer_perceptron=multilayer_perceptron,
+        labeled_examples_batch=labeled_examples_batch,
     )
 
-    ## 2nd test with a start_layer_rank != None ##
+    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_examples_batch[1])
+    last_layer_values = multilayer_perceptron.variables[len(layout) - 1][2]
+    desired_cost_one_batch = np.average(
+        np.linalg.norm(labeled_examples_batch[0] - last_layer_values, axis=1) ** 2
+    )
+
+    rtol = 1e-06
+    np.testing.assert_allclose(
+        actual=actual_cost_one_batch, desired=desired_cost_one_batch, rtol=rtol
+    )
+
+    # Test when start_layer_rank != None #
     layout = [2, 2, 2]
     N = len(layout)
-    multilayer_perceptron = script.MultilayerPerceptron(layout, dtype=np.float64)
-    label = [np.random.rand(1, layout[-1])]
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
+    label = np.random.rand(batch_size, layout[-1])
     modified_layer_rank = 0
-    new_values = [np.random.rand(layout[modified_layer_rank])]
-    multilayer_perceptron.variables[modified_layer_rank][2] = new_values
+    new_values = np.random.rand(batch_size, layout[modified_layer_rank])
 
     expected_layer_values = None
     for i in range(modified_layer_rank + 1, N):
@@ -376,18 +350,19 @@ def test_cost_one_example():
             )
         )
     expected_last_layer_values = expected_layer_values
-    desired_cost_one_example = (
-        np.linalg.norm(label[0] - expected_last_layer_values)
-    ) ** 2
+    desired_cost_one_batch = np.average(
+        np.linalg.norm(label - expected_last_layer_values, axis=1) ** 2
+    )
 
-    actual_cost_one_example = cost_one_example(
+    multilayer_perceptron.variables[modified_layer_rank][2] = new_values
+    actual_cost_one_batch = cost_one_batch(
         multilayer_perceptron=multilayer_perceptron,
-        labeled_example=[label],
+        labeled_examples_batch=[label],
         start_layer_rank=modified_layer_rank + 1,
     )
-    rtol = 1e-06
+
     np.testing.assert_allclose(
-        actual=actual_cost_one_example, desired=desired_cost_one_example, rtol=rtol
+        actual=actual_cost_one_batch, desired=desired_cost_one_batch, rtol=rtol
     )
 
 
@@ -403,7 +378,7 @@ def test_cost_gradient_one_example():
     # of the last layer (whose computations are different than the rest). The formula we're
     # verifying is (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑁−1) )=−2 ∗(𝑦−𝐴^(𝑁−1)):
     size = 2
-    multilayer_perceptron = script.MultilayerPerceptron([size, size])
+    multilayer_perceptron = mlp(layout=[size, size])
     label = np.random.rand(1, size)
     _labeled_example = [label, np.random.rand(1, size)]
     _cost_gradient = cost_gradient_one_example(
@@ -445,7 +420,7 @@ def test_cost_gradient_one_example():
 
     # We verify that the loop works as intended.
     size = 2
-    multilayer_perceptron = script.MultilayerPerceptron([size, size, size])
+    multilayer_perceptron = mlp(layout=[size, size, size])
     _labeled_example = [np.random.rand(1, size), np.random.rand(1, size)]
     _cost_gradient = cost_gradient_one_example(
         multilayer_perceptron=multilayer_perceptron, labeled_example=_labeled_example
@@ -486,32 +461,33 @@ def test_cost_gradient_one_example():
     # Relative tolerance of the comparison tests.
     rtol = 1e-2
 
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=dtype)
+    multilayer_perceptron = mlp(layout=layout, dtype=dtype)
     N = len(layout)
     _labeled_example = [
         np.random.rand(1, layout[-1]),
         np.random.rand(1, layout[0]),
     ]
-    initial_cost_one_example = cost_one_example(
-        multilayer_perceptron=multilayer_perceptron, labeled_example=_labeled_example
+    initial_cost_one_batch = cost_one_batch(
+        multilayer_perceptron=multilayer_perceptron,
+        labeled_examples_batch=_labeled_example,
     )
     _cost_gradient_one_example = cost_gradient_one_example(
         multilayer_perceptron=multilayer_perceptron, labeled_example=_labeled_example
     )
 
     # First we tackle the special case of the values of the last layer. We make sure to
-    # use the alternative mode of operation of cost_one_example (where no example is fed to the
+    # use the alternative mode of operation of cost_one_batch (where no example is fed to the
     # first layer and the values of the multilayer perceptron are recomputed starting from a
     # certain row) as not doing it would overwrite the new nudged values of the last layer. This
     # will be a recurrent remark in the following tests.
     for j in range(layout[-1]):
         multilayer_perceptron.variables[N - 1][2][0][j] += eps
-        new_cost_one_example = cost_one_example(
+        new_cost_one_batch = cost_one_batch(
             multilayer_perceptron=multilayer_perceptron,
-            labeled_example=_labeled_example[0],
+            labeled_examples_batch=_labeled_example[0],
             start_layer_rank=N,
         )
-        dc = new_cost_one_example - initial_cost_one_example
+        dc = new_cost_one_batch - initial_cost_one_batch
         expected_dc = eps * _cost_gradient_one_example[N - 1][2][0][j]
 
         # We now assess that expected_dc is close to dc up to some relative tolerance. We also let
@@ -528,7 +504,7 @@ def test_cost_gradient_one_example():
         # expected_cost * 1e-(number of decimal digits of the used representation), or
         # alternatively, expected_cost * machine epsilon.
         machine_epsilon = np.finfo(dtype).eps
-        atol = new_cost_one_example * machine_epsilon
+        atol = new_cost_one_batch * machine_epsilon
         np.testing.assert_allclose(actual=dc, desired=expected_dc, rtol=rtol, atol=atol)
         # (In this simple case, we can find a simple theoretical formula for actual-desired, which
         # is exactly eps**2. This was confirmed visually when debugging).
@@ -541,16 +517,16 @@ def test_cost_gradient_one_example():
         # Starting with the biaises:
         for j in range(layout[i]):
             multilayer_perceptron.variables[i][0][0][j] += eps
-            new_cost_one_example = cost_one_example(
+            new_cost_one_batch = cost_one_batch(
                 multilayer_perceptron=multilayer_perceptron,
-                labeled_example=_labeled_example[0],
+                labeled_examples_batch=_labeled_example[0],
                 start_layer_rank=i,
             )
-            dc = new_cost_one_example - initial_cost_one_example
+            dc = new_cost_one_batch - initial_cost_one_batch
             expected_dc = eps * _cost_gradient_one_example[i][0][0][j]
 
             # Same remark as previously on the absolute tolerance used.
-            atol = new_cost_one_example * machine_epsilon
+            atol = new_cost_one_batch * machine_epsilon
             np.testing.assert_allclose(
                 actual=dc, desired=expected_dc, rtol=rtol, atol=atol
             )
@@ -563,17 +539,17 @@ def test_cost_gradient_one_example():
         for j in range(layout[i]):
             for k in range(layout[i - 1]):
                 multilayer_perceptron.variables[i][1][j][k] += eps
-                new_cost_one_example = cost_one_example(
+                new_cost_one_batch = cost_one_batch(
                     multilayer_perceptron=multilayer_perceptron,
-                    labeled_example=_labeled_example[0],
+                    labeled_examples_batch=_labeled_example[0],
                     start_layer_rank=i,
                 )
-                dc = new_cost_one_example - initial_cost_one_example
+                dc = new_cost_one_batch - initial_cost_one_batch
                 expected_dc = eps * _cost_gradient_one_example[i][1][j][k]
 
                 # J'ai du mal à le justifier parfaitement, mais il suffit de rajouter ce petit 2
                 # pour que les tests passent tout le temps (ils passent une fois sur deux sinon).
-                atol = 2 * new_cost_one_example * machine_epsilon
+                atol = 2 * new_cost_one_batch * machine_epsilon
                 np.testing.assert_allclose(
                     actual=dc, desired=expected_dc, rtol=rtol, atol=atol
                 )
@@ -583,15 +559,15 @@ def test_cost_gradient_one_example():
         # The value of the previous layer:
         for j in range(layout[i]):
             multilayer_perceptron.variables[i - 1][2][0][j] += eps
-            new_cost_one_example = cost_one_example(
+            new_cost_one_batch = cost_one_batch(
                 multilayer_perceptron,
-                labeled_example=_labeled_example[0],
+                labeled_examples_batch=_labeled_example[0],
                 start_layer_rank=(i - 1) + 1,
             )
-            dc = new_cost_one_example - initial_cost_one_example
+            dc = new_cost_one_batch - initial_cost_one_batch
             expected_dc = eps * _cost_gradient_one_example[i - 1][2][0][j]
 
-            atol = new_cost_one_example * machine_epsilon
+            atol = new_cost_one_batch * machine_epsilon
             np.testing.assert_allclose(
                 actual=dc, desired=expected_dc, rtol=rtol, atol=atol
             )
@@ -602,7 +578,7 @@ def test_cost_gradient_one_example():
 def test_cost_gradient():
     # First test with only one image :
     layout = [2, 2, 2]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
     labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
     _training_set = [labeled_example_1]
     expected_cost_gradient = cost_gradient_one_example(
@@ -665,28 +641,35 @@ def test_cost_gradient():
             )
 
 
-def test_cost():
-    layout = [2, 2, 2]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
-    _training_set = training_set(label_size=2, example_size=2, training_set_size=1)
-    expected_cost_1 = cost_one_example(
-        multilayer_perceptron=multilayer_perceptron, labeled_example=_training_set[0]
+@pytest.mark.parametrize(
+    argnames="training_set_size,max_batch_size",
+    argvalues=[(1, 1), (2, 1), (2, 2), (3, 2)],
+)
+def test_cost(training_set_size, max_batch_size):
+    layout = [2, 2]
+    multilayer_perceptron = mlp(layout=layout)
+    _training_set = training_set(
+        label_size=layout[-1],
+        example_size=layout[0],
+        training_set_size=training_set_size,
+    )
+    vectorized_training_set = vectorize_learning_set(
+        learning_set=_training_set, max_batch_size=max_batch_size
+    )
+    expected_cost = np.mean(
+        np.array(
+            [
+                cost_one_batch(
+                    multilayer_perceptron=multilayer_perceptron,
+                    labeled_examples_batch=labeled_examples_batch,
+                )
+                for labeled_examples_batch in vectorized_training_set
+            ]
+        )
     )
     actual_cost = cost(
-        multilayer_perceptron=multilayer_perceptron, training_set=_training_set
-    )
-    np.testing.assert_equal(expected_cost_1, actual_cost)
-
-    _training_set = training_set(label_size=2, example_size=2, training_set_size=2)
-    expected_cost_1 = cost_one_example(
-        multilayer_perceptron=multilayer_perceptron, labeled_example=_training_set[0]
-    )
-    expected_cost_2 = cost_one_example(
-        multilayer_perceptron=multilayer_perceptron, labeled_example=_training_set[1]
-    )
-    expected_cost = np.mean(np.array([expected_cost_1, expected_cost_2]))
-    actual_cost = cost(
-        multilayer_perceptron=multilayer_perceptron, training_set=_training_set
+        multilayer_perceptron=multilayer_perceptron,
+        training_set=vectorized_training_set,
     )
     np.testing.assert_equal(expected_cost, actual_cost)
 
@@ -697,7 +680,7 @@ def test_learning_one_step():
     # The first test assesses the structure of the response.
     layout = [16, 16, 16, 10]
     N = len(layout)
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
     labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
     _training_set = [labeled_example_1]
 
@@ -811,7 +794,7 @@ def test_learning_one_step():
     )
 
     ## A test of the inertia feature
-    multilayer_perceptron = little_mlp(layout=[2, 2])
+    multilayer_perceptron = mlp(layout=[2, 2])
     _training_set = training_set(label_size=2, example_size=2, training_set_size=2)
     previous_cost_gradient = cost_gradient(
         multilayer_perceptron=multilayer_perceptron, training_set=_training_set
@@ -834,7 +817,7 @@ def test_learning_one_step():
 
 def test_flatten_cost_gradient():
     layout = [2, 1]
-    multilayer_perceptron = little_mlp(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     _training_set = training_set(
         label_size=layout[-1], example_size=layout[0], training_set_size=1
     )
@@ -858,7 +841,7 @@ def test_flatten_cost_gradient():
 
 def test_consecutive_gradients_cosine():
     layout = [3, 2, 1]
-    multilayer_perceptron = little_mlp(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     _training_set = training_set(
         label_size=layout[-1], example_size=layout[0], training_set_size=2
     )
@@ -877,7 +860,7 @@ def test_consecutive_gradients_cosine():
 def test_learning():
     # First test to make sure no error is raised.
     layout = [1, 1]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
     _training_set = training_set(
         label_size=layout[-1], example_size=layout[0], training_set_size=1
     )
@@ -904,7 +887,7 @@ def test_learning():
 
     # This time with a training set with multiple examples.
     layout = [5, 5, 5]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout, dtype=np.float64)
+    multilayer_perceptron = mlp(layout=layout, dtype=np.float64)
     _training_set = training_set(
         label_size=layout[-1], example_size=layout[0], training_set_size=2
     )
@@ -952,7 +935,7 @@ def test_learning():
 
 def test_prediction_result():
     layout = [1, 1]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     multilayer_perceptron.variables[1][0] = 0
     multilayer_perceptron.variables[1][1][0][0] = 0
     labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
@@ -964,7 +947,7 @@ def test_prediction_result():
         == 1
     )
     layout = [1, 10]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     multilayer_perceptron.variables[1][0] = [0, -1, 0, 0, 0, 0, 0, 0, 0, 0]
     multilayer_perceptron.variables[1][1] = np.array(
         [
@@ -1006,7 +989,7 @@ def test_prediction_result():
 
 def test_accuracy():
     layout = [1, 10]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     labeled_example_1 = [np.random.rand(1, layout[-1]), np.random.rand(1, layout[0])]
     test_set_1 = [labeled_example_1]
     assert accuracy(
@@ -1015,7 +998,7 @@ def test_accuracy():
         multilayer_perceptron=multilayer_perceptron, labeled_example=test_set_1[0]
     )
     layout = [2, 2]
-    multilayer_perceptron = script.MultilayerPerceptron(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     labeled_example_2 = [np.array([[1, 0]]), np.random.rand(1, 2)]
     labeled_example_3 = [np.array([[0, 1]]), np.random.rand(1, 2)]
     multilayer_perceptron.variables[1][0][0] = [-1, 0]
@@ -1027,7 +1010,7 @@ def test_accuracy():
     )
     # Case with batches containing more than one labeled example
     layout = [2, 2]
-    multilayer_perceptron = little_mlp(layout=layout)
+    multilayer_perceptron = mlp(layout=layout)
     test_set = training_set(label_size=2, example_size=2, training_set_size=10)
     vectorized_test_set = vectorize_learning_set(
         learning_set=test_set, max_batch_size=10

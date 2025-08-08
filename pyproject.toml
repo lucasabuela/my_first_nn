@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-first-nn"
+version = "0.1.0"
+dependencies = [
+    "numpy == 1.26",
+    "matplotlib == 3.10",
+    "kagglehub == 0.3", # Used to interact with Kaggle, where the dataset is retrieved from
+    "tqdm == 4.66", # Add progress bars
+    "pytest == 8.4",
+    "notebook==7.4",
+    "ipython==9.4",
+    "ipykernel==6.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "line_profiler == 5.0",
+]
