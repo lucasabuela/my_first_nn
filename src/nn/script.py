@@ -232,6 +232,7 @@ class MultilayerPerceptron:
         self.layout = layout
         self.activation_fct = activation_fct
         self.activation_fct_derivative = get_derivative_activation_fct(activation_fct)
+        self.layer_count = len(layout)
         self.layers = []
         for i, size in enumerate(layout):
             # We isolate the last layer because it needs to have values in the range [0,1], and thus
@@ -280,7 +281,7 @@ def pre_regularization_value(
 
 
 def feed(
-    multilayer_perceptron: "MultilayerPerceptron",
+    mlp: "MultilayerPerceptron",
     example: np.ndarray = None,
     start_layer_rank: int = None,
 ):
@@ -293,39 +294,39 @@ def feed(
     no matter the case, all the matrices always have the same dimension : they are 2D-matrices.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron): the mutlilayer perceptron to be updated.
-        example (np.ndarray): Optional only if layer_rank != None (see below why). The example(s) to
-            be fed. Always a 2D-matrix, whose rows correspond to examples.
+        mlp (MultilayerPerceptron): the mutlilayer perceptron to be updated.
+        example (np.ndarray): Optional only if layer_rank != None (see below why). The example(s)
+            to be fed. Always a 2D-matrix, whose rows correspond to examples.
         start_layer_rank (int): Optional. If a value is provided, the example isn't plugged and the
             values of the multilayer perceptron are simply recomputed starting from the layer
-            ranked start_layer_rank, included. This is useful in the tests of the
-            cost_gradient_one_example function, to verify that the partial derivatives w.r.t. the
+            ranked start_layer_rank, included. This is useful in the tests of the cost_gradients_
+            on_examples_of_one_batch function, to verify that the partial derivatives w.r.t. the
             values are correct.
     """
-    N = len(multilayer_perceptron.layers)
+    N = mlp.layer_count
 
     if start_layer_rank is None:
         # Plugs the value of the example on the first layer.
-        multilayer_perceptron.variables[0][2] = example
+        mlp.variables[0][2] = example
 
         for i in range(1, N):
             z = pre_regularization_value(
-                biais=multilayer_perceptron.variables[i][0],
-                weights=multilayer_perceptron.variables[i][1],
-                values=multilayer_perceptron.variables[i - 1][2],
+                biais=mlp.variables[i][0],
+                weights=mlp.variables[i][1],
+                values=mlp.variables[i - 1][2],
             )
-            value = multilayer_perceptron.layers[i].activation_fct(z)
-            multilayer_perceptron.variables[i][2] = value
+            value = mlp.layers[i].activation_fct(z)
+            mlp.variables[i][2] = value
 
     else:
         for i in range(start_layer_rank, N):
             z = pre_regularization_value(
-                biais=multilayer_perceptron.variables[i][0],
-                weights=multilayer_perceptron.variables[i][1],
-                values=multilayer_perceptron.variables[i - 1][2],
+                biais=mlp.variables[i][0],
+                weights=mlp.variables[i][1],
+                values=mlp.variables[i - 1][2],
             )
-            value = multilayer_perceptron.layers[i].activation_fct(z)
-            multilayer_perceptron.variables[i][2] = value
+            value = mlp.layers[i].activation_fct(z)
+            mlp.variables[i][2] = value
 
 
 def expected_values_last_layer(label: int) -> np.ndarray:
@@ -339,41 +340,41 @@ def expected_values_last_layer(label: int) -> np.ndarray:
     return _expected_values_last_layers
 
 
-def cost_gradient_one_example(
-    multilayer_perceptron: MultilayerPerceptron, labeled_example: list
+def cost_gradients_on_examples_of_one_batch(
+    mlp: MultilayerPerceptron, labeled_examples_batch: list
 ):
     """
-    Compute the gradient of the cost of the multilayer perceptron with respect to one element
-    of the training set.
+    Compute the gradients of the cost of the multilayer perceptron on the labeled examples of a
+    batch of the training set.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron): the neural network whose gradient of the
-            cost with respect to the labeled example we want to calculate.
-        labeled_example (list): of the form [label, example]. "label" and "example" are 2D row
-            arrays of size respectively the size of the last layer and the size of the first layer.
-            Note that label is not a str, or an int, it has to be directly the output on the last
-            layer that the neural network should have. A small function tailored to each problem
-            should be used to turn a label in natural language into the corresponding array of
-            output values. Here, exemple is an array of 784 floats between 0 and 1, and abel is an
-            array of 10 floats between 0 and 1.
+        mlp (MultilayerPerceptron): the neural network whose gradient of the cost with respect to
+            the labeled example we want to calculate.
+        labeled_examples_batch (list): of the form [labels_batch, examples_batch]. "labels_batch"
+            and "examples_batch" are 2D row arrays of size respectively (nbs of examples in the
+            batch * size of the last layer) and (nbs of examples in the batch *size of the first
+            layer). Note that label is not a str, or an int, it has to be directly the output on
+            the last layer that the neural network should have.
 
     Returns:
-        _cost_gradient_one_example (np.ndarray): ibid.
+        _cost_gradients_on_examples_of_one_batch (list): each element of this list is is a list of
+            the form [dcd𝐁^𝐢, dcd𝐖^𝐢, dcd𝐀^𝐢], where dcd𝐁^𝐢 and dcd𝐀^𝐢 are 2D ndarray of shape (
+            batch_size, layer[i].size), and dcd𝐖^𝐢 a 3D ndarray of shape (batch_size, layer[i].size
+            , layer[i-1].size).
     """
     # First, we feed the neural network with the example.
-    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+    feed(mlp=mlp, example=labeled_examples_batch[1])
 
     # We'll have to compute the partial derivatives w.r.t all the variables, i.e. w.r.t the
     # weights, the biaises and also the values. Thus we define :
-    partial_derivatives = deepcopy(multilayer_perceptron.variables)
+    partial_derivatives = deepcopy(mlp.variables)
 
-    # N is the number of layers
-    N = len(multilayer_perceptron.layers)
+    N = mlp.layer_count
 
     # Let's start by tackling the special case of the partial derivatives with regard to the values
-    # of the last layer. The formula is (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑁−1) )=−2 ∗(𝑦−𝐴^(𝑁−1)):
+    # of the last layer. The formula is (𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐀^(𝐍−𝟏) )=−2 ∗(𝐲−𝐀^(𝐍−𝟏)):
     partial_derivatives[N - 1][2] = -2 * (
-        labeled_example[0] - multilayer_perceptron.variables[N - 1][2]
+        labeled_examples_batch[0] - mlp.variables[N - 1][2]
     )
 
     # Then, the rest of the partial derivatives can be computed layer by layer, by "going back into
@@ -388,98 +389,139 @@ def cost_gradient_one_example(
 
         # Computation of the gradients w.r.t. the b_{j}^{i}. Note that the product employed is the
         # element-wise product. The formula employed is
-        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 )=−(𝜕𝐶_(/image))/(𝜕𝐴^𝑖 )⊙𝑓_𝑖^′ (𝑍^𝑖):
+        # (𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐁^𝐢 )=−(𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐀^𝐢 )⊙𝑓_𝑖^′ (𝐙^𝐢 ):
         partial_derivatives[i][0] = -(
             partial_derivatives[i][2]
-            * multilayer_perceptron.layers[i].activation_fct_derivative(
+            * mlp.layers[i].activation_fct_derivative(
                 pre_regularization_value(
-                    biais=multilayer_perceptron.variables[i][0],
-                    weights=multilayer_perceptron.variables[i][1],
-                    values=multilayer_perceptron.variables[i - 1][2],
+                    biais=mlp.variables[i][0],
+                    weights=mlp.variables[i][1],
+                    values=mlp.variables[i - 1][2],
                 )
             )
         )
 
         # Computation of the gradients w.r.t. the w_{j,k}^{i}. We use a relation between these and
         # the gradients w.r.t. the biases to accelerate the compute. The formula is:
-        # ((𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝑊^𝑖 )=−(𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐵^𝑖 )^T*(𝐴^(𝑖−1) ).
-        partial_derivatives[i][1] = (
-            -partial_derivatives[i][0].T @ multilayer_perceptron.variables[i - 1][2]
+        # (𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐖^𝐢 )=−((𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐁^𝑖 ))^(𝑅_1 )∗〖𝐀^(𝐢−𝟏)〗^(𝑅_2 ), where R1 and R2
+        # represent certain rotations in space and * the usual dot product in N-d (sum over the
+        # second-to-last dimension of the first entry and the last dimension of the second entry).
+        # To see a diagram of this operation, see the docs. Intuitively, it's the operation for the
+        # case with one example per batch, stacked over a new dimension.
+        batch_size = len(labeled_examples_batch[0])
+        partial_derivatives[i][1] = -np.reshape(
+            a=partial_derivatives[i][0],
+            newshape=(batch_size, mlp.layers[i].size, 1),
+        ) @ np.reshape(
+            a=mlp.variables[i - 1][2],
+            newshape=(batch_size, 1, mlp.layers[i - 1].size),
         )
 
         # Computation of the gradients w.r.t. the a_{k}^{i-1} with the formula :
-        # (𝜕𝐶_(/𝑖𝑚𝑎𝑔𝑒))/(𝜕𝐴^(𝑖−1) )=-(𝜕𝐶_(/image))/(𝜕𝐵^𝑖 )∗𝑊^𝑖. Same note as above.
+        # ((𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐀^(𝐢−𝟏) )=−(𝜕𝐶_(/𝑏𝑎𝑡𝑐ℎ))/(𝜕𝐁^𝐢 )∗𝑊^𝑖. Same note as above.
         partial_derivatives[i - 1][2] = -(
-            partial_derivatives[i][0] @ multilayer_perceptron.variables[i][1]
+            partial_derivatives[i][0] @ mlp.variables[i][1]
         )
 
-    _cost_gradient_one_example = partial_derivatives
+    _cost_gradients_on_examples_of_one_batch = partial_derivatives
 
-    return _cost_gradient_one_example
+    return _cost_gradients_on_examples_of_one_batch
 
 
-def cost_gradient(
-    multilayer_perceptron: MultilayerPerceptron, training_set: list
-) -> list:
+def cost_gradient_one_batch(_cost_gradients_on_examples_of_one_batch: list) -> list:
+    """
+    This function averages the gradients of the cost on the labeled_examples of a batch to produce
+    the gradient of the cost on this batch.
+
+    Args:
+        cost_gradients_on_examples_of_one_batch (list): each element of this list is is a list of
+            the form [dcd𝐁^𝐢, dcd𝐖^𝐢, dcd𝐀^𝐢], where dcd𝐁^𝐢 and dcd𝐀^𝐢 are 2D ndarray of shape (
+            batch_size, layer[i].size), and dcd𝐖^𝐢 a 3D ndarray of shape (batch_size, layer[i].size
+            , layer[i-1].size).
+
+    Returns:
+        _cost_gradient_one_batch (list): each element of this list is is a list of the form [
+            dcd𝐁^(𝐢,𝒃), dcd𝐖^(𝐢,𝒃), dcd𝐀^(𝐢,𝐛)], where dcd𝐁^(𝐢,𝒃) and dcd𝐀^(𝐢,𝐛) are 2D ndarray of
+            shape (1, layer[i].size), and dcd𝐖^(𝐢,𝒃) a 2D ndarray of shape (layer[i].size,
+            layer[i-1].size).
+    """
+    N = len(_cost_gradients_on_examples_of_one_batch)
+    _cost_gradient_one_batch = []
+    for i in range(N):
+        _partial_derivative_wrt_layer_on_one_batch = []
+        for variable in range(3):
+            dcdvar = np.average(
+                a=_cost_gradients_on_examples_of_one_batch[i][variable], axis=0
+            )
+            # dcd𝐖^𝐢 is 3D so keepdims can't be used in the average up above, but dcd𝐁^𝐢 and
+            # dcd𝐀^𝐢 have to end up 2D so we add np.atleast_2d.
+            _partial_derivative_wrt_layer_on_one_batch.append(np.atleast_2d(dcdvar))
+
+        _cost_gradient_one_batch.append(_partial_derivative_wrt_layer_on_one_batch)
+
+    return _cost_gradient_one_batch
+
+
+def cost_gradient(mlp: MultilayerPerceptron, training_set: list) -> list:
     """
     Compute the gradient of the cost of the multilayer perceptron with respect to the training set.
 
     Args:
-        multilayer perceptron (MultilayerPerceptron): the neural network to be trained.
+        mlp (MultilayerPerceptron): the neural network to be trained.
         training_set (list): the training set.
 
     Returns:
         _cost_gradient (list): ibid. Same size as the multilayer perceptron parameters.
     """
-    _cost_gradients_one_example = []
-    for labeled_example in training_set:
-        _cost_gradient_one_example = cost_gradient_one_example(
-            multilayer_perceptron=multilayer_perceptron, labeled_example=labeled_example
+    _cost_gradients_one_batch = [
+        cost_gradient_one_batch(
+            cost_gradients_on_examples_of_one_batch(
+                mlp=mlp,
+                labeled_examples_batch=batch,
+            )
         )
-        _cost_gradients_one_example.append(_cost_gradient_one_example)
+        for batch in training_set
+    ]
 
-    N = len(multilayer_perceptron.layers)
-    nb_tests = len(training_set)
+    # The cost gradient on the training set is computed by averaging the cost gradients on the
+    # batches, weighted by the number of labeled examples they include.
+    N = mlp.layer_count
+    batch_count = len(training_set)
     _cost_gradient = []
+    batch_weights = [len(batch[0]) for batch in training_set]
     for i in range(N):
-        # bais
-        dcdb = np.average(
-            np.array([_cost_gradients_one_example[s][i][0] for s in range(nb_tests)]),
-            axis=0,
-        )
-
-        # weights
-        dcdw = np.average(
-            np.array([_cost_gradients_one_example[s][i][1] for s in range(nb_tests)]),
-            axis=0,
-        )
-
-        # values
-        dcdv = np.average(
-            np.array([_cost_gradients_one_example[s][i][2] for s in range(nb_tests)]),
-            axis=0,
-        )
-
-        partial_derivative_wrt_layer = [dcdb, dcdw, dcdv]
+        partial_derivative_wrt_layer = []
+        for variable in range(3):
+            dcdvar = np.average(
+                a=np.array(
+                    [
+                        _cost_gradients_one_batch[batch][i][variable]
+                        for batch in range(batch_count)
+                    ]
+                ),
+                weights=batch_weights,
+                axis=0,
+            )
+            partial_derivative_wrt_layer.append(dcdvar)
         _cost_gradient.append(partial_derivative_wrt_layer)
 
     return _cost_gradient
 
 
-def cost_one_batch(
-    multilayer_perceptron: MultilayerPerceptron,
+def costs_one_batch(
+    mlp: MultilayerPerceptron,
     labeled_examples_batch: list,
     start_layer_rank: int = None,
 ):
-    """Make the multilayer perceptron guess for the provided example and computes the square of the
-    L^2 distance of its output to the label provided. Note that this function works in place, it
-    modifies the values of the neural network (not its parameters). Alternatively, if a layer rank
-    is provided, the function doesn't use the example provided and simply recomputes the values of
-    the neural network starting from the starting layer rank provided, and computes the cost (with
-    respect to the label provided, thus the label is still required).
+    """Make the multilayer perceptron guess for the provided examples and computes the square of
+    the L^2 distance of its output to the label provided. Note that this function works in place,
+    it modifies the values of the neural network (not its parameters). Alternatively, if a layer
+    rank is provided, the function doesn't use the example provided and simply recomputes the
+    values of the neural network starting from the starting layer rank provided, and computes the
+    costs (with respect to the label provided, thus the label is still required).
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron)
+        mlp (MultilayerPerceptron)
         labeled_examples_batch (list): If a start_layer_rank is provided, of the form [label]. Else
             , of the form [labels_batch, examples_batch]. "labels_batch" and "examples_batch" are 2D
             row arrays of size respectively (nbs of examples in the batch * size of the last layer)
@@ -490,42 +532,41 @@ def cost_one_batch(
         start_layer_rank (int). Optional. Cf function description.
 
     Returns:
-        _cost_one_batch (float): with the highest precision between the one of the
-            parameters of multilayer_perceptron.variables and the labeled_example. ?
+        _costs_one_batch (np.ndarray): of dimension 1 (cost for each labeled example of the batch).
     """
     if start_layer_rank is None:
         feed(
-            multilayer_perceptron=multilayer_perceptron,
+            mlp=mlp,
             example=labeled_examples_batch[1],
         )
     else:
         feed(
-            multilayer_perceptron=multilayer_perceptron,
+            mlp=mlp,
             start_layer_rank=start_layer_rank,
         )
 
-    N = len(multilayer_perceptron.variables)
+    N = mlp.layer_count
     # Note that precising axis=1 is optional in the case with one example, but it is added so that
     # the function can be reused in the multiple-examples case.
     _costs = (
         np.linalg.norm(
-            labeled_examples_batch[0] - multilayer_perceptron.variables[N - 1][2],
+            labeled_examples_batch[0] - mlp.variables[N - 1][2],
             axis=1,
         )
         ** 2
     )
-    return np.average(_costs)
+    return _costs
 
 
 def cost(
-    multilayer_perceptron: MultilayerPerceptron,
+    mlp: MultilayerPerceptron,
     training_set: list[list[np.ndarray, np.ndarray]],
 ):
     """
     Returns the average cost of the multilayer perceptron provided over the training set provided.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron)
+        mlp (MultilayerPerceptron)
         training_set (list): list of the form [labeled_examples] where labeled_example = [label,
             example], label and example being 2D np.ndarrays. Alternatively, of the equivalent
             form [labeled_examples_batches] where labeled_examples_batch = [labels_batch,
@@ -535,19 +576,23 @@ def cost(
         _cost (float)
     """
     _costs = [
-        cost_one_batch(
-            multilayer_perceptron=multilayer_perceptron,
-            labeled_examples_batch=labeled_examples_batch,
+        np.average(
+            costs_one_batch(
+                mlp=mlp,
+                labeled_examples_batch=labeled_examples_batch,
+            )
         )
         for labeled_examples_batch in training_set
     ]
-    weights = [len(labeled_examples_batch) for labeled_examples_batch in training_set]
+    weights = [
+        len(labeled_examples_batch[0]) for labeled_examples_batch in training_set
+    ]
     _cost = np.average(a=_costs, weights=weights)
     return _cost
 
 
 def learning_one_step(
-    multilayer_perceptron: MultilayerPerceptron,
+    mlp: MultilayerPerceptron,
     training_set: list[list[np.ndarray, np.ndarray]],
     eta: float = 1,
     inertia: bool = True,
@@ -559,7 +604,7 @@ def learning_one_step(
     to the gradient. Work in-place.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
+        mlp (MultilayerPerceptron): the neural network to be trained.
         training_set (list[list[np.ndarray, np.ndarray]]): the training set.
         eta (float): "learning boldness/nudge strenght factor". Hyperparameter. Parameters are
             nudged by -eta * np.average(layout) * grad C. Default to 1e-02.
@@ -574,25 +619,23 @@ def learning_one_step(
         inertia_strength (float): If inertia=True.
         previous_cost_gradient (list): to be used if inertia=True.
     """
-    _cost_gradient = cost_gradient(
-        multilayer_perceptron=multilayer_perceptron, training_set=training_set
-    )
-    N = len(multilayer_perceptron.layers)
-    layout = multilayer_perceptron.layout
-    # Because of the inhomogenous shape of multilayer_perceptron.variables, we have to use for
-    # loops up until we manipulate arrays.
+    _cost_gradient = cost_gradient(mlp=mlp, training_set=training_set)
+    N = mlp.layer_count
+    layout = mlp.layout
+    # Because of the inhomogenous shape of mlp.variables, we have to use for loops up until we
+    # manipulate arrays.
     for i in range(N):
         for variable in range(2):
-            multilayer_perceptron.variables[i][variable] += (
+            mlp.variables[i][variable] += (
                 -eta * np.average(layout) * _cost_gradient[i][variable]
             )
             if inertia:
-                multilayer_perceptron.variables[i][variable] += (
+                mlp.variables[i][variable] += (
                     -eta
                     * np.average(layout)
                     * kwargs["previous_cost_gradient"][i][variable]
                 )
-    multilayer_perceptron.cost = cost(multilayer_perceptron, training_set)
+    mlp.cost = cost(mlp, training_set)
     if returns_cost_gradient:
         return _cost_gradient
 
@@ -637,10 +680,10 @@ def consecutive_gradients_cosine(cost_gradient_1: list, cost_gradient_2: list) -
 
 
 def learning(
-    multilayer_perceptron: MultilayerPerceptron,
+    mlp: MultilayerPerceptron,
     training_set: list[list[np.ndarray, np.ndarray]],
     eta: float,
-    stop_condition: str = "fixed_steps_number",
+    stop_condition: str = "fixed_step_count",
     stochastic: bool = True,
     inertia: bool = True,
     metrics_to_track: list[str] = [""],
@@ -651,10 +694,10 @@ def learning(
     and retropropagation. Works in-place. The stop condition used is explained below.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron): the neural network to be trained.
+        mlp (MultilayerPerceptron): the neural network to be trained.
         training_set (list): the training set to learn from.
-        stop_condition (str): Either "fixed_steps_number" or "stagnation". If = fixed_steps_numbers
-            , a fixed number of learning steps steps_number are undergone. If = stagnation,
+        stop_condition (str): Either "fixed_step_count" or "stagnation". If = fixed_step_count
+            , a fixed number of learning steps step_count are undergone. If = stagnation,
             learning steps are undergone until the training cost doesn't variate more than
             stagnation_espilon over max_stagnation_steps.
         eta (float): "learning boldness/nudge strength". Hyperparameter. At each step of the
@@ -672,7 +715,7 @@ def learning(
             last two are negligeable. Defaults to an empty list.
 
     **Kwargs:
-        steps_number (int): If stop_condition=fixed_steps_number. Number of learning steps to
+        step_count (int): If stop_condition=fixed_step_count. Number of learning steps to
             undergo.
         stagnation_epsilon (float): If stop_condition=stagnation. Maximal variation of the cost
             over stagnation_steps below wich a local minimum is considered to have been found.
@@ -692,7 +735,7 @@ def learning(
             included. If is empty, the function doesn't return it.
     """
     # Defaults values of kwargs (maybe a cleaner way of organising the code ?)
-    default_steps_number = 100
+    default_step_count = 100
     default_max_stagnation_steps = 3
     default_step_training_size = 1000
     default_inertia_strength = 0.1
@@ -701,20 +744,17 @@ def learning(
 
     if inertia:
         previous_cost_gradient = [
-            [
-                np.zeros(shape=multilayer_perceptron.variables[i][variable].shape)
-                for variable in range(3)
-            ]
-            for i in range(len(multilayer_perceptron.layout))
+            [np.zeros(shape=mlp.variables[i][variable].shape) for variable in range(3)]
+            for i in range(len(mlp.layout))
         ]
     # Cette section est améliorable, clarifiable je pense. For ... in metrics_to_computes: ?
     if "training_costs" in metrics_to_track:
         costs_during_training = [
-            cost(multilayer_perceptron, training_set)
+            cost(mlp, training_set)
         ]  # Starts before the first learning step (at =(after) the 0-th learning step)
     if "accuracies" in metrics_to_track:
         accuracies_during_training = [
-            accuracy(multilayer_perceptron, kwargs["test_set"])
+            accuracy(mlp, kwargs["test_set"])
         ]  # Starts before the first learning step (at the 0-th learning step)
     if "gradients_norms" in metrics_to_track:
         gradients_norms_during_training = []  # Starts at the first learning step
@@ -722,25 +762,30 @@ def learning(
         consecutive_gradients_cosines_during_training = (
             []
         )  # Starts at the first learning step
-        previous_cost_gradient = cost_gradient_one_example(
-            multilayer_perceptron=multilayer_perceptron, labeled_example=training_set[0]
-        )
+        previous_cost_gradient = [
+            [np.zeros(shape=mlp.variables[i][variable].shape) for variable in range(3)]
+            for i in range(len(mlp.layout))
+        ]
 
-    if stop_condition == "fixed_steps_number":
+    if stop_condition == "fixed_step_count":
         for _ in tqdm.tqdm(
-            range(kwargs.get("steps_number", default_steps_number))
+            range(kwargs.get("step_count", default_step_count))
         ):  # tqdm here adds a progress bar, nothing more.
             if stochastic:
+                batch_size = len(training_set[0][0])
                 training_set_at_this_step = random.sample(
                     population=training_set,
-                    k=kwargs.get("step_training_size", default_step_training_size),
+                    k=int(
+                        kwargs.get("step_training_size", default_step_training_size)
+                        / batch_size
+                    ),
                 )
             else:
                 training_set_at_this_step = training_set
 
             if inertia:
                 _cost_gradient = learning_one_step(
-                    multilayer_perceptron=multilayer_perceptron,
+                    mlp=mlp,
                     training_set=training_set_at_this_step,
                     eta=eta,
                     inertia=True,
@@ -753,7 +798,7 @@ def learning(
                 previous_cost_gradient = _cost_gradient
             else:
                 _cost_gradient = learning_one_step(
-                    multilayer_perceptron=multilayer_perceptron,
+                    mlp=mlp,
                     training_set=training_set_at_this_step,
                     eta=eta,
                     inertia=False,
@@ -764,11 +809,9 @@ def learning(
             # chose this over introducing yet again another if condition.
 
             if "training_costs" in metrics_to_track:
-                costs_during_training.append(multilayer_perceptron.cost)
+                costs_during_training.append(mlp.cost)
             if "accuracies" in metrics_to_track:
-                accuracies_during_training.append(
-                    accuracy(multilayer_perceptron, kwargs["test_set"])
-                )
+                accuracies_during_training.append(accuracy(mlp, kwargs["test_set"]))
             if "gradients_norms" in metrics_to_track:
                 gradients_norms_during_training.append(
                     np.linalg.norm(flatten_cost_gradient(_cost_gradient))
@@ -787,28 +830,25 @@ def learning(
         # We define the counter of current steps where the cost is in [cost_at_start +/-
         # stagnation_epsilon] where cost_at_start is the cost at the time the counter was started. The
         # counter restarts when the cost escapes this interval.
-        costs_during_training = [cost(multilayer_perceptron, training_set)]
+        costs_during_training = [cost(mlp, training_set)]
         cost_at_start = costs_during_training[0]
         counter = 0
         while counter < kwargs.get(
             "max_stagnation_steps", default_max_stagnation_steps
         ):
             learning_one_step(
-                multilayer_perceptron=multilayer_perceptron,
+                mlp=mlp,
                 training_set=training_set,
                 eta=eta,
                 inertia=False,
             )
 
-            costs_during_training.append(multilayer_perceptron.cost)
+            costs_during_training.append(mlp.cost)
 
-            if (
-                np.abs(cost_at_start - multilayer_perceptron.cost)
-                < kwargs["stagnation_epsilon"]
-            ):
+            if np.abs(cost_at_start - mlp.cost) < kwargs["stagnation_epsilon"]:
                 counter += 1
             else:
-                cost_at_start = multilayer_perceptron.cost
+                cost_at_start = mlp.cost
                 counter = 0
 
     if "training_costs" in metrics_to_track:
@@ -828,7 +868,7 @@ def learning(
 
 
 def prediction_result(
-    multilayer_perceptron: MultilayerPerceptron,
+    mlp: MultilayerPerceptron,
     labeled_example: list[np.ndarray, np.ndarray],
 ) -> bool | np.ndarray:
     """
@@ -841,7 +881,7 @@ def prediction_result(
     a new matrix) and returns a 1D matrix of prediction results instead of one.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron)
+        mlp (MultilayerPerceptron)
         labeled_example (list): either of the form [label, example] where label and example are 2D
             np.ndarray, or of the form [labels_batch, examples_batch] where both are also 2D
             np.ndarray.
@@ -849,17 +889,17 @@ def prediction_result(
     Returns:
         _prediction_result (bool | np.ndarray)
     """
-    feed(multilayer_perceptron=multilayer_perceptron, example=labeled_example[1])
+    feed(mlp=mlp, example=labeled_example[1])
     # Note that precising axis=1 is optional in the case with one example, but it is added so that
     # the function can be reused in the multiple-examples case. In the latter case, guess and truth
     # are 1D-arrays, not floats.
-    guess = np.argmax(multilayer_perceptron.variables[-1][2], axis=1)
+    guess = np.argmax(mlp.variables[-1][2], axis=1)
     truth = np.argmax(labeled_example[0], axis=1)
     return guess == truth
 
 
 def accuracy(
-    multilayer_perceptron: MultilayerPerceptron,
+    mlp: MultilayerPerceptron,
     test_set: list[list[np.ndarray, np.ndarray]],
 ) -> float:
     """
@@ -879,7 +919,7 @@ def accuracy(
     matrices for one's machine.
 
     Args:
-        multilayer_perceptron (MultilayerPerceptron)
+        mlp (MultilayerPerceptron)
         test_set (list): list of the form [labeled_examples_batches] where labeled_example_batch =
         [labels_batch, examples_batch], labels_batch and examples_batch being 2D np.ndarrays with
         one or several rows.
@@ -890,16 +930,17 @@ def accuracy(
     # np.average is used two times because trying to average over an unique array breaks when the
     # last batch is not full (because this array can't be easily created). I beleive this is the
     # fastest way but I might be wrong.
-    batches_accuracies = [
+    batch_accuracies = [
         np.average(
             prediction_result(
-                multilayer_perceptron=multilayer_perceptron,
+                mlp=mlp,
                 labeled_example=labeled_examples_batch,
             )
         )
         for labeled_examples_batch in test_set
     ]
-    _accuracy = np.average(batches_accuracies)
+    batch_weights = [len(batch[0]) for batch in test_set]
+    _accuracy = np.average(batch_accuracies, weights=batch_weights)
     return _accuracy
 
 
