@@ -5,8 +5,9 @@ __pycache__
 */__pycache__
 */.pytest_cache
 data/
-packages.txt
 src/my_first_nn.egg-info
 docs/Diagrams_and_formulaes_raw.pptx
 docs/diagram_matrices_multiplication_used_in_cost_gradient_one_batch.glb
 docs/diagram_matrices_multiplication_used_in_cost_gradient_one_batch.png
+docs/unit_test_algorithm_closest_point_to_two_lines.ggb
+garbage.py

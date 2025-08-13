@@ -1,7 +1,7 @@
 # My first neural network (in progress)
 
 ## Abstract
-My first neural network. I will try to represent, and train, from scratch, the multilayer perceptron presented in 3b1b explanation series on NN.
+My first neural network. I represent, and train, from scratch (=numpy only), the multilayer perceptron presented in 3b1b explanation series on NN. 
 
 ## How to build the project
 This project uses a few libraries. To add them to the environment, from the root directory, run `pip install .`. They are listed in the `pyproject.toml` file. You might also install them manually.
@@ -10,7 +10,7 @@ This project uses a few libraries. To add them to the environment, from the root
 From the root directory, run `pytest` in the terminal. To run only one test script, run `pytest tests/<test_script_name>` from root.
 
 ## Overview of the folders
-- `docs` brings together math notes and plots hilighting interesting properties.
+- `docs` brings together math notes and plots higlighting interesting properties.
 - `src` contains the code.
 - `tests`
 - `playground.ipynb` is the only document one should interact with once the project is finished. In it, one can import the objects and functions necessary to instantiate and train a classifier.
